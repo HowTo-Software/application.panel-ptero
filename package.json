@@ -141,6 +141,7 @@
         "**/nanoid": "^3.3.18",
         "**/picomatch": "^2.3.2",
         "**/postcss": "^8.5.26",
+        "**/postcss-selector-parser": "^7.1.6",
         "**/sockjs/uuid": "^11.1.1",
         "react-router-dom/react-router/path-to-regexp": "1.9.0",
         "tinyglobby/picomatch": "^4.0.7",
