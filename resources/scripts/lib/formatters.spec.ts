@@ -37,6 +37,9 @@ describe('@/lib/formatters.ts', function () {
             [1_678_342_000, '1.56 GiB'],
             [1_000_000_000_000, '931.32 GiB'],
             [1_099_511_627_776, '1 TiB'],
+            [1_125_899_906_842_624, '1 PiB'],
+            [1_152_921_504_606_846_976, '1 EiB'],
+            [1_180_591_620_717_411_303_424, '1024 EiB'],
         ])('should format %d bytes as "%s"', function (input, output) {
             expect(bytesToString(input)).toBe(output);
         });
@@ -50,6 +53,7 @@ describe('@/lib/formatters.ts', function () {
         it('should format an IPv6 address', function () {
             expect(ip(':::1')).toBe('[:::1]');
             expect(ip('2001:db8::')).toBe('[2001:db8::]');
+            expect(ip('ABCD:EF01:2345:6789:ABCD:EF01:2345:6789')).toBe('[ABCD:EF01:2345:6789:ABCD:EF01:2345:6789]');
         });
 
         it('should handle random inputs', function () {

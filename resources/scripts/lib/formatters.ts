@@ -1,4 +1,5 @@
 const _CONVERSION_UNIT = 1024;
+const _BYTE_UNITS = ['Bytes', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB'];
 
 /**
  * Given a value in megabytes converts it back down into bytes.
@@ -17,10 +18,11 @@ function bytesToString(bytes: number, decimals = 2): string {
     if (bytes < 1) return '0 Bytes';
 
     decimals = Math.floor(Math.max(0, decimals));
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const rawIndex = Math.floor(Math.log(bytes) / Math.log(k));
+    const i = Math.min(rawIndex, _BYTE_UNITS.length - 1);
     const value = Number((bytes / Math.pow(k, i)).toFixed(decimals));
 
-    return `${value} ${['Bytes', 'KiB', 'MiB', 'GiB', 'TiB'][i]}`;
+    return `${value} ${_BYTE_UNITS[i]}`;
 }
 
 /**
@@ -28,7 +30,7 @@ function bytesToString(bytes: number, decimals = 2): string {
  */
 function ip(value: string): string {
     // Linear-time equivalent of /([a-f0-9:]+:+)+[a-f0-9]+/, which was vulnerable to catastrophic backtracking.
-    return /[a-f0-9:]:[a-f0-9]/.test(value) ? `[${value}]` : value;
+    return /[A-Fa-f0-9:]:[A-Fa-f0-9]/.test(value) ? `[${value}]` : value;
 }
 
 export { ip, mbToBytes, bytesToString };
