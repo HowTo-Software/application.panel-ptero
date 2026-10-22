@@ -10,9 +10,11 @@ RUN yarn install --frozen-lockfile \
 
 # Stage 1:
 # Build the actual container with all of the needed PHP dependencies that will run the application.
-FROM --platform=$TARGETOS/$TARGETARCH php:8.3-fpm-alpine
+# PHP2Shell fixed in 8.3.36; pin the verified multi-platform OCI index.
+FROM --platform=$TARGETOS/$TARGETARCH php:8.3.36-fpm-alpine@sha256:cc6ceb9613967cac41a56240c27f9b134bf9fc0313afa8a004ed2ca717cffa5a
 WORKDIR /app
 COPY . ./
+RUN php .github/ci/assert-php-version.php
 COPY --from=0 /app/public/assets ./public/assets
 RUN apk add --no-cache --update ca-certificates dcron curl git supervisor tar unzip nginx libpng-dev libxml2-dev libzip-dev certbot certbot-nginx mysql-client \
     && docker-php-ext-configure zip \

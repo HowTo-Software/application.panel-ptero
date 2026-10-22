@@ -4,6 +4,7 @@
 # Real credentials. The Dockerfile copies .env.example to .env during the build,
 # so that one file must stay in the context.
 .env*
+**/.env*
 !.env.example
 
 # History is not needed at runtime; config/app.php is stamped with APP_VERSION instead.

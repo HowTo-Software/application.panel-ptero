@@ -67,6 +67,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
+          pull: true
           push: true
           # The panel host is x86_64; arm64 under QEMU costs minutes and ships nothing.
           platforms: linux/amd64
@@ -77,6 +78,9 @@ jobs:
           provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Verify the published image before making it deployable
+        run: docker run --rm --network none --entrypoint /bin/sh "${IMAGE}@${{ steps.push.outputs.digest }}" /app/.github/ci/verify-runtime.sh
 
       - id: ref
         name: Pin the deployable reference to a digest
@@ -112,6 +116,9 @@ jobs:
           PANEL_IMAGE: ${{ inputs.image_tag != '' && format('ghcr.io/howto-software/howtoosoftware-panel-ptero@{0}', inputs.image_tag) || needs.build.outputs.image }}
           GIT_SHA: ${{ github.sha }}
         run: |
+          # Also guard workflow_dispatch references that intentionally skip build.
+          # Do not invoke the image's migration/seed entrypoint for this check.
+          docker run --rm --interactive --network none --entrypoint php "$PANEL_IMAGE" /dev/stdin < .github/ci/assert-php-version.php
           chmod +x deploy/deploy.sh
           deploy/deploy.sh "$PANEL_IMAGE"
 
