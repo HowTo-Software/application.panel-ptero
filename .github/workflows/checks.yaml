@@ -40,19 +40,21 @@ jobs:
       - id: build
         name: Publish the toolchain image if its definition changed
         run: |
-          tag="$(sha256sum .github/ci/Dockerfile | cut -c1-12)"
+          tag="$(sha256sum .github/ci/Dockerfile .github/ci/assert-php-version.php | sha256sum | cut -c1-12)"
           image="${CI_IMAGE_REPO}:${tag}"
           echo "image=${image}" >> "$GITHUB_OUTPUT"
           if docker buildx imagetools inspect "${image}" >/dev/null 2>&1; then
             echo "${image} is already published"
           else
-            docker build --tag "${image}" .github/ci
+            docker build --pull --tag "${image}" .github/ci
             if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ github.event.pull_request.head.repo.fork }}" = "true" ]; then
               echo "Using the locally built ${image} for this fork pull request"
             else
               docker push "${image}"
             fi
           fi
+          # Inspect the actual interpreter, including when reusing a published tag.
+          docker run --rm --network none --entrypoint php "${image}" /usr/local/share/hts/assert-php-version.php
 
       - if: always()
         run: docker logout ghcr.io
@@ -72,8 +74,10 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+      - run: php .github/ci/assert-php-version.php
       - uses: ramsey/composer-install@v4
       - run: vendor/bin/php-cs-fixer fix --dry-run --diff
+      - run: vendor/bin/php-cs-fixer fix --dry-run --diff --path-mode=override .github/ci/assert-php-version.php
       - name: Hand the workspace back to the runner user
         # Container steps run as root; the next job on this runner does not.
         if: always()
@@ -94,6 +98,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v7
+      - run: php .github/ci/assert-php-version.php
       - uses: ramsey/composer-install@v4
       - run: cp .env.ci .env
       - run: vendor/bin/phpstan analyse --memory-limit=2G --no-progress
@@ -141,6 +146,7 @@ jobs:
       DB_USERNAME: root
     steps:
       - uses: actions/checkout@v7
+      - run: php .github/ci/assert-php-version.php
       - uses: ramsey/composer-install@v4
       - run: cp .env.ci .env
       - name: Unit
@@ -152,6 +158,23 @@ jobs:
       - name: Hand the workspace back to the runner user
         if: always()
         run: chown -R "$(stat -c '%u:%g' /__w)" "$GITHUB_WORKSPACE"
+
+  production-image:
+    name: Production image (no deploy)
+    needs: toolchain
+    runs-on: [self-hosted, linux, X64, hts-panel]
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Compose without loading production environment files
+        env:
+          COMPOSE_DISABLE_ENV_FILE: '1'
+        run: docker compose -f deploy/compose.prod.yml config --no-env-resolution --no-interpolate --quiet
+      - name: Build the production image without reusing vulnerable layers
+        run: docker build --pull --no-cache --build-arg APP_VERSION="${{ github.sha }}" --tag "hts-panel-php-check:${{ github.sha }}" .
+      - name: Check PHP CLI, FPM, extensions, configuration and Laravel boot
+        # No normal entrypoint, network, database, production volumes or secrets.
+        run: docker run --rm --network none --entrypoint /bin/sh "hts-panel-php-check:${{ github.sha }}" /app/.github/ci/verify-runtime.sh
 
   frontend:
     name: Frontend
