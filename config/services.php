@@ -41,5 +41,7 @@ return [
         'redirect' => env('AUTHENTIK_REDIRECT_URI', '/auth/oauth/callback/authentik'),
         'recovery_flow' => env('AUTHENTIK_RECOVERY_FLOW', 'default-recovery-flow'),
         'password_change_flow' => env('AUTHENTIK_PASSWORD_CHANGE_FLOW', 'default-password-change'),
+        // Authentik group of HTS website customers. Unset keeps SSO limited to AD-owned accounts.
+        'customer_group' => env('AUTHENTIK_CUSTOMER_GROUP'),
     ],
 ];
