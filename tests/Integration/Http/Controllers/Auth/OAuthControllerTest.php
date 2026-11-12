@@ -10,6 +10,7 @@ use Laravel\Socialite\Contracts\Provider;
 use PHPUnit\Framework\Attributes\TestWith;
 use Laravel\Socialite\Two\User as SocialiteUser;
 use Pterodactyl\Tests\Integration\Http\HttpTestCase;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 
 /**
  * Single sign-on account matching. Authentik is replaced by a stubbed Socialite
@@ -17,6 +18,9 @@ use Pterodactyl\Tests\Integration\Http\HttpTestCase;
  */
 class OAuthControllerTest extends HttpTestCase
 {
+    // Each case creates users with the same email, so its fixtures must roll back.
+    use DatabaseTransactions;
+
     public function setUp(): void
     {
         parent::setUp();
