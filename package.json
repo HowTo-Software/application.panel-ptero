@@ -133,6 +133,7 @@
     },
     "resolutions": {
         "**/@babel/runtime": "^7.29.7",
+        "**/deepmerge": "^4.3.1",
         "**/follow-redirects": "^1.16.0",
         "**/form-data": "^4.0.6",
         "**/json5": "^2.2.3",
