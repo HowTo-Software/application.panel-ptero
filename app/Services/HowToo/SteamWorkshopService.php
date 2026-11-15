@@ -130,7 +130,6 @@ final class SteamWorkshopService
         });
     }
 
-
     /**
      * Import a public Project Zomboid collection from Steam.
      * Nothing here changes the server INI; the UI must explicitly save it.
