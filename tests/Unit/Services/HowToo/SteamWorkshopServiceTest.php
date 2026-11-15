@@ -145,7 +145,6 @@ class SteamWorkshopServiceTest extends TestCase
         $this->assertSame([['publishedfileid' => '1']], $filtered);
     }
 
-
     public function testCollectionChildrenKeepsWorkshopOrderAndRemovesDuplicates(): void
     {
         $payload = [
@@ -180,7 +179,7 @@ class SteamWorkshopServiceTest extends TestCase
     {
         $this->expectException(\Pterodactyl\Exceptions\DisplayException::class);
         $children = [];
-        for ($index = 0; $index <= 500; $index++) {
+        for ($index = 0; $index <= 500; ++$index) {
             $children[] = ['publishedfileid' => (string) ($index + 1)];
         }
 
