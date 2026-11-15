@@ -241,7 +241,10 @@ describe('saveWorkshop', () => {
 
 
 describe('getWorkshopCollection', () => {
-    beforeEach(() => jest.mocked(http.get).mockReset());
+    beforeEach(() => {
+        jest.mocked(http.get).mockReset();
+        jest.mocked(http.put).mockReset();
+    });
 
     it('loads collection children and Mod IDs without sending a server update', async () => {
         jest.mocked(http.get).mockResolvedValue({
