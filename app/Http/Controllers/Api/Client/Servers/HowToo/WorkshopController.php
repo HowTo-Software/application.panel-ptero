@@ -15,6 +15,7 @@ use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopReadRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopSearchRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopCollectionRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopUpdateRequest;
 
 class WorkshopController extends ClientApiController
@@ -86,6 +87,21 @@ class WorkshopController extends ClientApiController
         $results['items'] = collect($results['items'])->map(fn (array $item): array => $this->publicItem($item))->all();
 
         return new JsonResponse($results);
+    }
+
+    public function collection(WorkshopCollectionRequest $request, Server $server): JsonResponse
+    {
+        if (!$this->gameContext->for($server)['project_zomboid']) {
+            throw new DisplayException('Workshop Manager is only available for Project Zomboid servers.');
+        }
+
+        $result = $this->steam->collection($request->string('link')->toString());
+        // Keep the API response on the same public allowlist as single mods.
+        $result['items'] = collect($result['items'])
+            ->map(fn (array $item): array => $this->publicItem($item))
+            ->all();
+
+        return new JsonResponse($result);
     }
 
     public function resolve(WorkshopReadRequest $request, Server $server, string $workshopId): JsonResponse
