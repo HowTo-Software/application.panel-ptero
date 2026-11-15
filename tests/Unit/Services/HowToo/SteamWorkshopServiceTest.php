@@ -145,6 +145,71 @@ class SteamWorkshopServiceTest extends TestCase
         $this->assertSame([['publishedfileid' => '1']], $filtered);
     }
 
+
+    public function testCollectionChildrenKeepsWorkshopOrderAndRemovesDuplicates(): void
+    {
+        $payload = [
+            'response' => [
+                'collectiondetails' => [[
+                    'publishedfileid' => '3730991494',
+                    'result' => 1,
+                    'children' => [
+                        ['publishedfileid' => '123', 'sortorder' => 0],
+                        ['publishedfileid' => '456', 'sortorder' => 1],
+                        ['publishedfileid' => '123', 'sortorder' => 2],
+                        ['publishedfileid' => '../invalid', 'sortorder' => 3],
+                    ],
+                ]],
+            ],
+        ];
+
+        $this->assertSame(['123', '456'], $this->invoke('collectionChildren', [$payload, '3730991494']));
+    }
+
+    public function testCollectionResponseRejectsForeignOrMissingCollection(): void
+    {
+        $this->expectException(\Pterodactyl\Exceptions\DisplayException::class);
+        $this->invoke('collectionChildren', [[
+            'response' => ['collectiondetails' => [
+                ['publishedfileid' => '999', 'result' => 1, 'children' => []],
+            ]],
+        ], '3730991494']);
+    }
+
+    public function testCollectionRejectsOverFiveHundredItemsWithoutSilentlyTruncating(): void
+    {
+        $this->expectException(\Pterodactyl\Exceptions\DisplayException::class);
+        $children = [];
+        for ($index = 0; $index <= 500; $index++) {
+            $children[] = ['publishedfileid' => (string) ($index + 1)];
+        }
+
+        $this->invoke('collectionChildren', [[
+            'response' => ['collectiondetails' => [[
+                'publishedfileid' => '3730991494',
+                'result' => 1,
+                'children' => $children,
+            ]]],
+        ], '3730991494']);
+    }
+
+    public function testTransformedWorkshopDetailsExposeAppAndTypeOnlyForInternalFiltering(): void
+    {
+        $resolver = new ProjectZomboidModIdResolver(
+            \Mockery::mock(\Pterodactyl\Repositories\Wings\DaemonFileRepository::class),
+            \Mockery::mock(\Illuminate\Contracts\Cache\Repository::class),
+        );
+        $this->reflection->getProperty('modIds')->setValue($this->service, $resolver);
+
+        $item = $this->invoke('transform', [[
+            'publishedfileid' => '3730991494',
+            'file_type' => 2,
+            'consumer_app_id' => 108600,
+        ]]);
+        $this->assertSame(2, $item['file_type']);
+        $this->assertSame(108600, $item['consumer_app_id']);
+    }
+
     private function invoke(string $method, array $arguments): mixed
     {
         $reflection = $this->reflection->getMethod($method);
