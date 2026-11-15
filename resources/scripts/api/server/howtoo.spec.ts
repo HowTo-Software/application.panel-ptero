@@ -1,6 +1,6 @@
 import { SESSION_EXPIRED_MESSAGE } from '@/api/authenticatedStreamingFetch';
 import http from '@/api/http';
-import { saveWorkshop, searchWorkshop, streamAssistant } from './howtoo';
+import { getWorkshopCollection, saveWorkshop, searchWorkshop, streamAssistant } from './howtoo';
 import fs from 'fs';
 import path from 'path';
 
@@ -236,5 +236,38 @@ describe('saveWorkshop', () => {
             action: 'restart',
         });
         expect(result.restarted).toBe(true);
+    });
+});
+
+
+describe('getWorkshopCollection', () => {
+    beforeEach(() => jest.mocked(http.get).mockReset());
+
+    it('loads collection children and Mod IDs without sending a server update', async () => {
+        jest.mocked(http.get).mockResolvedValue({
+            data: {
+                collection_id: '3730991494',
+                name: 'PZ collection',
+                total: 3,
+                items: [
+                    { workshop_id: '11', name: 'First mod', mod_ids: ['FirstMod'] },
+                    { workshop_id: '12', name: 'Second mod', mod_ids: [] },
+                ],
+                unresolved_ids: ['12'],
+                unavailable_ids: ['13'],
+            },
+        });
+        const result = await getWorkshopCollection(
+            'server-id',
+            'https://steamcommunity.com/sharedfiles/filedetails/?id=3730991494'
+        );
+        expect(http.get).toHaveBeenCalledWith('/api/client/servers/server-id/howtoo/workshop/collection', {
+            params: { link: 'https://steamcommunity.com/sharedfiles/filedetails/?id=3730991494' },
+        });
+        expect(result.collectionId).toBe('3730991494');
+        expect(result.items[0].modIds).toEqual(['FirstMod']);
+        expect(result.unresolvedIds).toEqual(['12']);
+        expect(result.unavailableIds).toEqual(['13']);
+        expect(http.put).not.toHaveBeenCalled();
     });
 });
