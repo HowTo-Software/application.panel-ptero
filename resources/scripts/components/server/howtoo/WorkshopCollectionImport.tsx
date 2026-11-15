@@ -2,7 +2,7 @@ import React, { FormEvent, useMemo, useState } from 'react';
 import Button from '@/components/elements/Button';
 import Input from '@/components/elements/Input';
 import { httpErrorToHuman } from '@/api/http';
-import { getWorkshopCollection, WorkshopCollectionResult, WorkshopItem } from '@/api/server/howtoo';
+import { getWorkshopCollection, resolveWorkshopItem, WorkshopCollectionResult, WorkshopItem } from '@/api/server/howtoo';
 import { translateUiText } from '@/i18n/uiTranslations';
 import { uniqueWorkshopValues } from './workshopSelection';
 
@@ -20,19 +20,22 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
     const [link, setLink] = useState('');
     const [preview, setPreview] = useState<WorkshopCollectionResult | null>(null);
     const [manual, setManual] = useState<Record<string, string>>({});
+    const [resolved, setResolved] = useState<Record<string, WorkshopItem>>({});
+    const [resolving, setResolving] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
 
     const options = useMemo(
         () =>
-            (preview?.items || []).map((item) => {
+            (preview?.items || []).map((original) => {
+                const item = resolved[original.workshopId] || original;
                 const exactIds = uniqueWorkshopValues((manual[item.workshopId] || '').split(/[;,]/)).filter((id) =>
                     /^[A-Za-z0-9_.-]{1,128}$/.test(id)
                 );
                 return item.modIds.length ? item : { ...item, modIds: exactIds };
             }),
-        [preview, manual]
+        [preview, manual, resolved]
     );
     const toAdd = options.filter((item) => !configured.has(item.workshopId) && item.modIds.length > 0);
     const missing = options.filter((item) => item.modIds.length === 0);
@@ -45,6 +48,7 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
         setNotice('');
         setPreview(null);
         setManual({});
+        setResolved({});
         try {
             const result = await getWorkshopCollection(uuid, link.trim());
             setPreview(result);
@@ -52,6 +56,24 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
             setError(httpErrorToHuman(cause));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const tryResolve = async (item: WorkshopItem) => {
+        if (resolving) return;
+        setResolving(item.workshopId);
+        setError('');
+        try {
+            const updated = await resolveWorkshopItem(uuid, item.workshopId);
+            if (updated.modIds.length) {
+                setResolved((current) => ({ ...current, [item.workshopId]: updated }));
+            } else {
+                setError(translateUiText('Steam não informou o Mod ID deste item. Informe o valor exato do mod.info.'));
+            }
+        } catch (cause) {
+            setError(httpErrorToHuman(cause));
+        } finally {
+            setResolving(null);
         }
     };
 
@@ -147,6 +169,18 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                                     </p>
                                 )}
                                 {!item.modIds.length && !configured.has(item.workshopId) && (
+                                    <>
+                                    <Button
+                                        type='button'
+                                        isSecondary
+                                        size='xsmall'
+                                        disabled={!!resolving}
+                                        isLoading={resolving === item.workshopId}
+                                        onClick={() => void tryResolve(item)}
+                                        style={{ marginTop: '.35rem' }}
+                                    >
+                                        {translateUiText('Tentar detectar Mod ID')}
+                                    </Button>
                                     <Input
                                         aria-label={translateUiText('Mod IDs para ') + item.name}
                                         value={manual[item.workshopId] || ''}
@@ -156,6 +190,7 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                                         placeholder={translateUiText('Mod IDs exatos, separados por ;')}
                                         style={{ width: '100%', marginTop: '.35rem' }}
                                     />
+                                    </>
                                 )}
                             </div>
                         ))}
