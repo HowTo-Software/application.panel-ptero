@@ -15,8 +15,8 @@ use Pterodactyl\Http\Controllers\Api\Client\ClientApiController;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopReadRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopSearchRequest;
-use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopCollectionRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopUpdateRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopCollectionRequest;
 
 class WorkshopController extends ClientApiController
 {
@@ -109,6 +109,7 @@ class WorkshopController extends ClientApiController
                     $item['mod_ids'] = $installed[$item['workshop_id']];
                     $item['mod_id_source'] = 'mod_info';
                 }
+
                 return $this->publicItem($item);
             })
             ->all();
