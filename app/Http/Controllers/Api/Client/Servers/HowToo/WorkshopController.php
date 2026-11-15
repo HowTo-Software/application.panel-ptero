@@ -96,9 +96,26 @@ class WorkshopController extends ClientApiController
         }
 
         $result = $this->steam->collection($request->string('link')->toString());
-        // Keep the API response on the same public allowlist as single mods.
+        // Reuse the existing mod.info reader for any items already installed.
+        // Bound batches preserve the resolver's 100 Workshop ID limit.
+        $installed = [];
+        foreach (array_chunk(array_column($result['items'], 'workshop_id'), 100) as $batch) {
+            $installed = array_merge($installed, $this->modIds->resolveInstalled($server, $batch));
+        }
+
         $result['items'] = collect($result['items'])
-            ->map(fn (array $item): array => $this->publicItem($item))
+            ->map(function (array $item) use ($installed): array {
+                if (($installed[$item['workshop_id']] ?? []) !== []) {
+                    $item['mod_ids'] = $installed[$item['workshop_id']];
+                    $item['mod_id_source'] = 'mod_info';
+                }
+                return $this->publicItem($item);
+            })
+            ->all();
+        $result['unresolved_ids'] = collect($result['items'])
+            ->filter(fn (array $item): bool => $item['mod_ids'] === [])
+            ->pluck('workshop_id')
+            ->values()
             ->all();
 
         return new JsonResponse($result);
