@@ -47,6 +47,15 @@ export interface WorkshopSearchResult {
     mode: 'text' | 'direct';
 }
 
+export interface WorkshopCollectionResult {
+    collectionId: string;
+    name: string;
+    total: number;
+    items: WorkshopItem[];
+    unresolvedIds: string[];
+    unavailableIds: string[];
+}
+
 export interface CurseForgeMod {
     id: number;
     name: string;
@@ -248,6 +257,20 @@ export const searchWorkshop = async (
             hasNext: data.pagination?.has_next ?? false,
         },
         mode: data.mode === 'direct' ? 'direct' : 'text',
+    };
+};
+
+export const getWorkshopCollection = async (uuid: string, link: string): Promise<WorkshopCollectionResult> => {
+    const { data } = await http.get(`/api/client/servers/${uuid}/howtoo/workshop/collection`, {
+        params: { link },
+    });
+    return {
+        collectionId: data.collection_id,
+        name: data.name,
+        total: data.total,
+        items: (data.items || []).map(workshopItem),
+        unresolvedIds: data.unresolved_ids || [],
+        unavailableIds: data.unavailable_ids || [],
     };
 };
 
