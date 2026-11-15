@@ -9,7 +9,7 @@ import { uniqueWorkshopValues } from './workshopSelection';
 interface Props {
     uuid: string;
     configured: Set<string>;
-    onImport: (items: WorkshopItem[]) => void;
+    onImport: (items: WorkshopItem[]) => boolean;
 }
 
 /**
@@ -79,7 +79,10 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
 
     const apply = () => {
         if (!toAdd.length) return;
-        onImport(toAdd);
+        if (!onImport(toAdd)) {
+            setError(translateUiText('A coleção excede o limite de 500 Workshop IDs ou Mod IDs. Remova alguns itens antes de importar.'));
+            return;
+        }
         setNotice(translateUiText('Mods da coleção adicionados às alterações pendentes. Clique em Salvar para aplicar no servidor.'));
     };
 
