@@ -9,6 +9,7 @@ use Pterodactyl\Events\Auth\DirectLogin;
 use Laravel\Socialite\Contracts\Provider;
 use PHPUnit\Framework\Attributes\TestWith;
 use Laravel\Socialite\Two\User as SocialiteUser;
+use Pterodactyl\Services\Helpers\AssetHashService;
 use Pterodactyl\Tests\Integration\Http\HttpTestCase;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 
@@ -63,6 +64,26 @@ class OAuthControllerTest extends HttpTestCase
         $this->identity('player@example.com', $groups);
 
         $this->get(route('auth.oauth.callback'))->assertRedirect(route('auth.login'));
+
+        $this->assertGuest();
+    }
+
+    /**
+     * A refused sign-in returns to the login page, which must say why. Without
+     * the reason the page looks unchanged and every retry appears to loop.
+     */
+    public function testRefusedSignInExplainsItselfOnTheLoginPage(): void
+    {
+        // The page really renders; only the built asset manifest is missing in tests.
+        $this->mock(AssetHashService::class)->shouldIgnoreMissing('');
+        User::factory()->create(['email' => 'player@example.com', 'external_id' => null]);
+        $this->identity('player@example.com', ['hts-customers']);
+
+        $this->withHeader('Accept-Language', 'en')
+            ->followingRedirects()
+            ->get(route('auth.oauth.callback'))
+            ->assertOk()
+            ->assertSee('"error":' . json_encode(trans('auth.sso.not_permitted', [], 'en')), false);
 
         $this->assertGuest();
     }

@@ -11,6 +11,8 @@ export interface SiteSettings {
         enabled: boolean;
         recoveryUrl: string;
         passwordChangeUrl: string;
+        // Only set on the page load that follows a refused SSO sign-in.
+        error: string;
     };
 }
 

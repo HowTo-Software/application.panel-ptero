@@ -3,6 +3,7 @@
 namespace Pterodactyl\Http\ViewComposers;
 
 use Illuminate\View\View;
+use Illuminate\Support\ViewErrorBag;
 use Pterodactyl\Services\Helpers\AssetHashService;
 
 class AssetComposer
@@ -38,7 +39,18 @@ class AssetComposer
                 // Same store, so a signed-in user changes their password there too. This
                 // flow requires an Authentik session; the recovery one requires no session.
                 'passwordChangeUrl' => $ssoEnabled ? $flow($authentik['password_change_flow']) : '',
+                // Why the last sign-in was refused. OAuthController flashes it on the redirect
+                // back to the login page, which otherwise looks exactly as it did before.
+                'error' => $this->ssoError(),
             ],
         ]);
+    }
+
+    private function ssoError(): string
+    {
+        $request = request();
+        $errors = $request->hasSession() ? $request->session()->get('errors') : null;
+
+        return $errors instanceof ViewErrorBag ? $errors->first('sso') : '';
     }
 }
