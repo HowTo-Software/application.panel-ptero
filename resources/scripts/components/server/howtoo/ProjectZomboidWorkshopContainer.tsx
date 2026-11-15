@@ -19,6 +19,7 @@ import {
 } from '@/api/server/howtoo';
 import { ServerContext } from '@/state/server';
 import { Muted } from './IntegrationStyles';
+import WorkshopCollectionImport from './WorkshopCollectionImport';
 import {
     addWorkshopSelection,
     appendWorkshopResults,
@@ -220,6 +221,7 @@ export default () => {
     const [buildTag, setBuildTag] = useState<string | null>(null);
     const [categoryTags, setCategoryTags] = useState<string[]>([]);
     const [selectedCandidates, setSelectedCandidates] = useState<Map<string, WorkshopItem>>(new Map());
+    const [importedCollectionDetails, setImportedCollectionDetails] = useState<WorkshopItem[]>([]);
     const [manualIds, setManualIds] = useState<Record<string, string>>({});
     const [manualFallback, setManualFallback] = useState<Set<string>>(new Set());
     const [manualMod, setManualMod] = useState('');
@@ -240,11 +242,11 @@ export default () => {
     const configured = useMemo(() => new Set(workshopItems), [workshopItems]);
     const details = useMemo(() => {
         const map = new Map<string, WorkshopItem>();
-        [...(configuration?.details || []), ...results, ...Array.from(selectedCandidates.values())].forEach((item) =>
+        [...(configuration?.details || []), ...results, ...importedCollectionDetails, ...Array.from(selectedCandidates.values())].forEach((item) =>
             map.set(item.workshopId, item)
         );
         return map;
-    }, [configuration?.details, results, selectedCandidates]);
+    }, [configuration?.details, results, importedCollectionDetails, selectedCandidates]);
     const changed = hasWorkshopChanges(configuration, workshopItems, mods);
 
     const loadCatalog = useCallback(
@@ -541,6 +543,27 @@ export default () => {
                             selectedTags={categoryTags}
                             onToggleTag={toggleTag}
                         />
+                        <Can action='integration.workshop-update'>
+                            <WorkshopCollectionImport
+                                uuid={server.uuid}
+                                configured={configured}
+                                onImport={(items) => {
+                                    let nextItems = workshopItems;
+                                    let nextMods = mods;
+                                    items.forEach((item) => {
+                                        const selection = addWorkshopSelection(nextItems, nextMods, item);
+                                        nextItems = selection.workshopItems;
+                                        nextMods = selection.mods;
+                                    });
+                                    setWorkshopItems(nextItems);
+                                    setMods(nextMods);
+                                    setImportedCollectionDetails((current) => appendWorkshopResults(current, items));
+                                    setNotice(
+                                        translateUiText('Coleção adicionada às alterações pendentes. Clique em Salvar para aplicar no servidor.')
+                                    );
+                                }}
+                            />
+                        </Can>
                         {configuration?.detailsError && (
                             <Muted style={{ marginTop: '.7rem' }}>
                                 {configuration.detailsError}{' '}
