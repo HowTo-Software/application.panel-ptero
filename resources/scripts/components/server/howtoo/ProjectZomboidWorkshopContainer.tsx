@@ -555,12 +555,14 @@ export default () => {
                                         nextItems = selection.workshopItems;
                                         nextMods = selection.mods;
                                     });
+                                    if (nextItems.length > 500 || nextMods.length > 500) return false;
                                     setWorkshopItems(nextItems);
                                     setMods(nextMods);
                                     setImportedCollectionDetails((current) => appendWorkshopResults(current, items));
                                     setNotice(
                                         translateUiText('Coleção adicionada às alterações pendentes. Clique em Salvar para aplicar no servidor.')
                                     );
+                                    return true;
                                 }}
                             />
                         </Can>
