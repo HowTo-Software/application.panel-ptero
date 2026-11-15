@@ -17,6 +17,8 @@ final class SteamWorkshopService
     private const QUERY_TYPE_RECENTLY_UPDATED = 21;
     private const DEFAULT_PER_PAGE = 30;
     private const MAX_PER_PAGE = 50;
+    private const MAX_COLLECTION_ITEMS = 500;
+    private const COLLECTION_DETAILS_BATCH = 100;
     private const BROWSE_MODES = ['search', 'trending', 'most_subscribed', 'recent'];
 
     public function __construct(
@@ -128,6 +130,119 @@ final class SteamWorkshopService
         });
     }
 
+
+    /**
+     * Import a public Project Zomboid collection from Steam.
+     * Nothing here changes the server INI; the UI must explicitly save it.
+     */
+    public function collection(string $link): array
+    {
+        $this->requireCredential();
+        $collectionId = $this->directWorkshopId(trim($link));
+        if ($collectionId === null) {
+            throw new DisplayException('Paste a valid Steam Workshop collection URL or numeric ID.');
+        }
+
+        $collection = $this->details([$collectionId])[0] ?? null;
+        if (!$collection || $collection['workshop_id'] !== $collectionId || $collection['file_type'] !== 2) {
+            throw new DisplayException('This Workshop link does not point to a public collection.');
+        }
+        if ($collection['consumer_app_id'] !== self::PROJECT_ZOMBOID_APP_ID) {
+            throw new DisplayException('Only Project Zomboid Workshop collections can be imported.');
+        }
+
+        $cacheKey = 'howtoo:steam:collection:' . $collectionId;
+
+        return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($collectionId, $collection): array {
+            try {
+                $response = Http::baseUrl(config('howtoo.providers.steam.base_url'))
+                    ->acceptJson()
+                    ->asForm()
+                    ->connectTimeout(5)
+                    ->timeout(20)
+                    ->post('/ISteamRemoteStorage/GetCollectionDetails/v1/', [
+                        'collectioncount' => 1,
+                        'publishedfileids[0]' => $collectionId,
+                    ]);
+            } catch (ConnectionException) {
+                throw new DisplayException('The Steam Workshop collection is temporarily unavailable.');
+            }
+
+            $this->throwForSteamResponse($response->status());
+            $payload = $response->json();
+            if (!is_array($payload)) {
+                throw new DisplayException('Steam returned an invalid collection response.');
+            }
+            $ids = $this->collectionChildren($payload, $collectionId);
+            $resolved = [];
+            // PublishedFileDetails accepts at most 100 IDs per request.
+            foreach (array_chunk($ids, self::COLLECTION_DETAILS_BATCH) as $batch) {
+                foreach ($this->details($batch) as $item) {
+                    if ($item['consumer_app_id'] === self::PROJECT_ZOMBOID_APP_ID
+                        && $item['file_type'] !== 2
+                        && in_array($item['workshop_id'], $batch, true)) {
+                        $resolved[$item['workshop_id']] = $item;
+                    }
+                }
+            }
+
+            $items = [];
+            $unavailable = [];
+            $unresolved = [];
+            foreach ($ids as $id) {
+                if (!isset($resolved[$id])) {
+                    $unavailable[] = $id;
+                    continue;
+                }
+                $item = $resolved[$id];
+                $items[] = $item;
+                if ($item['mod_ids'] === []) {
+                    $unresolved[] = $id;
+                }
+            }
+
+            return [
+                'collection_id' => $collectionId,
+                'name' => $collection['name'],
+                'total' => count($ids),
+                'items' => $items,
+                'unresolved_ids' => $unresolved,
+                'unavailable_ids' => $unavailable,
+            ];
+        });
+    }
+
+    /** @return string[] */
+    private function collectionChildren(array $payload, string $collectionId): array
+    {
+        $records = data_get($payload, 'response.collectiondetails');
+        if (!is_array($records)) {
+            throw new DisplayException('Steam returned an invalid collection details response.');
+        }
+        $collection = collect($records)->first(fn ($record): bool =>
+            is_array($record) && (string) ($record['publishedfileid'] ?? '') === $collectionId
+        );
+        if (!is_array($collection) || (int) ($collection['result'] ?? 0) !== 1) {
+            throw new DisplayException('The Steam collection is unavailable, private or deleted.');
+        }
+        $children = $collection['children'] ?? null;
+        if (!is_array($children)) {
+            throw new DisplayException('Steam did not return the collection items.');
+        }
+        if (count($children) > self::MAX_COLLECTION_ITEMS) {
+            throw new DisplayException('This collection contains more than 500 items and cannot be imported in one request.');
+        }
+
+        return collect($children)
+            ->filter(fn ($child): bool => is_array($child)
+                && preg_match('/^\d{1,20}$/', (string) ($child['publishedfileid'] ?? '')) === 1)
+            ->pluck('publishedfileid')
+            ->map(fn ($id): string => (string) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     private function requireCredential(): string
     {
         $key = $this->credentials->secret('steam');
@@ -152,6 +267,9 @@ final class SteamWorkshopService
 
         return [
             'workshop_id' => (string) ($item['publishedfileid'] ?? ''),
+            // Internal-only Steam fields used to reject other games/collections.
+            'file_type' => (int) ($item['file_type'] ?? 0),
+            'consumer_app_id' => (int) ($item['consumer_app_id'] ?? $item['creator_app_id'] ?? 0),
             'name' => mb_substr(trim((string) ($item['title'] ?? 'Untitled mod')), 0, 180),
             'image' => filter_var($item['preview_url'] ?? null, FILTER_VALIDATE_URL) ?: null,
             'description' => mb_substr($description, 0, 12000),
