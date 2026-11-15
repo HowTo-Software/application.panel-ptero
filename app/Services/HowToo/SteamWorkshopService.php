@@ -218,8 +218,8 @@ final class SteamWorkshopService
         if (!is_array($records)) {
             throw new DisplayException('Steam returned an invalid collection details response.');
         }
-        $collection = collect($records)->first(fn ($record): bool =>
-            is_array($record) && (string) ($record['publishedfileid'] ?? '') === $collectionId
+        $collection = collect($records)->first(
+            fn ($record): bool => is_array($record) && (string) ($record['publishedfileid'] ?? '') === $collectionId
         );
         if (!is_array($collection) || (int) ($collection['result'] ?? 0) !== 1) {
             throw new DisplayException('The Steam collection is unavailable, private or deleted.');
