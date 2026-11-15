@@ -7,13 +7,19 @@ import useFlash from '@/plugins/useFlash';
 import { useTranslation } from 'react-i18next';
 
 const LoginContainer = () => {
-    const { clearFlashes } = useFlash();
+    const { clearFlashes, addFlash } = useFlash();
     const { t } = useTranslation('strings');
     const ssoEnabled = useStoreState((state) => state.settings.data!.sso?.enabled ?? false);
     const recoveryUrl = useStoreState((state) => state.settings.data!.sso?.recoveryUrl ?? '');
+    const ssoError = useStoreState((state) => state.settings.data!.sso?.error ?? '');
 
     useEffect(() => {
         clearFlashes();
+        // A refused SSO sign-in lands back here. Without the reason the page looks
+        // unchanged, so every retry appears to loop.
+        if (ssoError) {
+            addFlash({ type: 'error', message: ssoError });
+        }
     }, []);
 
     return (
