@@ -25,7 +25,9 @@ RUN apk add --no-cache ca-certificates curl unzip libgcc libstdc++ libssl3 libcr
     && curl -fsSL --retry 3 https://github.com/SteamRE/DepotDownloader/releases/download/DepotDownloader_3.4.0/DepotDownloader-framework.zip -o /tmp/depot-downloader.zip \
     && echo "7419f65efb7eb16b6e56987ed1b76475f29c02475c0016166c84798388e796bc  /tmp/depot-downloader.zip" | sha256sum -c \
     && unzip -oq /tmp/depot-downloader.zip -d /opt/workshop \
-    && rm /tmp/depot-downloader.zip
+    && rm /tmp/depot-downloader.zip \
+    && chmod 0755 /usr/local/bin/hts-workshop-download \
+    && sed -i 's/\r$//' /usr/local/bin/hts-workshop-download /opt/workshop/mod-info-files.txt
 RUN apk add --no-cache --update ca-certificates dcron curl git supervisor tar unzip nginx libpng-dev libxml2-dev libzip-dev certbot certbot-nginx mysql-client \
     && docker-php-ext-configure zip \
     && docker-php-ext-install bcmath gd pdo_mysql zip \

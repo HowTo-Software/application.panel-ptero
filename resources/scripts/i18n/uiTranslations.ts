@@ -49,6 +49,43 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
         '{{name}}: não foi possível detectar os Mod IDs.': '{{name}}: could not detect the Mod IDs.',
         'Detectando Mod IDs': 'Detecting Mod IDs',
         'Mod IDs indisponíveis': 'Mod IDs unavailable',
+        'Observado por {{duration}}, desde {{time}} ({{count}} leituras).':
+            'Observed for {{duration}}, since {{time}} ({{count}} readings).',
+        'Consumo médio': 'Average usage',
+        'Consumo médio do servidor': 'Average server usage',
+        'Sem dados: a média é calculada enquanto o servidor está ligado.':
+            'No data: the average is calculated while the server is running.',
+        'Média:': 'Average:',
+        '{{percent}} do limite': '{{percent}} of the limit',
+        'Pico:': 'Peak:',
+        'Tráfego médio desde que o servidor ligou': 'Average traffic since the server started',
+        'Agora:': 'Now:',
+        '{{name}}: Mod ID não detectado ({{reason}}). O item foi selecionado mesmo assim; depois de adicioná-lo, informe o Mod ID na lista lateral ou salve e inicie o servidor para o painel ler o mod.info baixado.':
+            '{{name}}: Mod ID not detected ({{reason}}). The item was selected anyway; after adding it, type the Mod ID in the side list, or save and start the server so the panel reads the downloaded mod.info.',
+        'a leitura dos arquivos ainda não terminou': 'reading the files has not finished yet',
+        '{{count}} item(ns) foram salvos sem Mod ID. Inicie ou reinicie o servidor para ele baixar os mods e recarregue esta página: os Mod IDs lidos do mod.info aparecem na lista lateral para ativar.':
+            '{{count}} item(s) were saved without a Mod ID. Start or restart the server so it downloads the mods, then reload this page: the Mod IDs read from mod.info appear in the side list to activate.',
+        'Ativo no servidor. Clique para desativar.': 'Active on the server. Click to deactivate.',
+        'Inativo. Clique para ativar no servidor.': 'Inactive. Click to activate on the server.',
+        'Mod ID do item {{id}}': 'Mod ID for item {{id}}',
+        'Mod ID não detectado — digite aqui': 'Mod ID not detected — type it here',
+        Ativar: 'Activate',
+        'o leitor de arquivos do Workshop não está instalado neste painel':
+            'the Workshop file reader is not installed on this panel',
+        'a leitura dos arquivos do Workshop falhou': 'reading the Workshop files failed',
+        'a fila "workshop" não está sendo processada': 'the "workshop" queue is not being processed',
+        'o item não publica arquivos no Workshop': 'the item does not publish files on the Workshop',
+        'a descrição do Workshop não informa o Mod ID': 'the Workshop description does not state the Mod ID',
+        'Mods da coleção adicionados às alterações pendentes. {{count}} sem Mod ID serão resolvidos ao salvar ou depois que o servidor baixá-los.':
+            'Collection mods added to pending changes. {{count}} without a Mod ID will be resolved on save or after the server downloads them.',
+        'selecionados para adicionar': 'selected to add',
+        'A leitura dos arquivos de {{count}} itens está demorando. Você pode importar assim mesmo: eles serão resolvidos ao salvar.':
+            'Reading the files of {{count}} items is taking long. You can import anyway: they will be resolved on save.',
+        'Não foi possível detectar os Mod IDs de {{count}} itens. Eles podem ser importados mesmo assim: digite o Mod ID ou deixe o painel ler o mod.info depois que o servidor baixar o mod.':
+            'Could not detect the Mod IDs of {{count}} items. They can be imported anyway: type the Mod ID or let the panel read mod.info after the server downloads the mod.',
+        'Mod ID não detectado': 'Mod ID not detected',
+        'Motivo: {{reason}}.': 'Reason: {{reason}}.',
+        'Mod ID (opcional, separados por ;)': 'Mod ID (optional, separated by ;)',
         'Lendo os arquivos de {{count}} itens do Workshop…': 'Reading files for {{count}} Workshop items…',
         'Não foi possível detectar os Mod IDs de {{count}} itens.': 'Could not detect Mod IDs for {{count}} items.',
         'Cole o link de uma coleção pública de Project Zomboid para detectar automaticamente os Workshop IDs e Mod IDs.':

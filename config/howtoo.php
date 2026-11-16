@@ -8,7 +8,10 @@ return [
         'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 1000),
     ],
     'workshop' => [
+        // Wrapper around DepotDownloader that fetches only mod.info files: `<script> <ugc manifest> <dir>`.
         'downloader' => env('STEAM_WORKSHOP_DOWNLOADER', '/usr/local/bin/hts-workshop-download'),
+        // Queue consumed by the dedicated workshop worker (see .github/docker/supervisord.conf).
+        'queue' => env('STEAM_WORKSHOP_QUEUE', 'workshop'),
     ],
     'providers' => [
         'ollama' => [

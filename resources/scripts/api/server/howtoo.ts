@@ -8,6 +8,14 @@ export interface AssistantMessage {
 
 export type WorkshopBrowseMode = 'search' | 'trending' | 'most_subscribed' | 'recent';
 
+export type WorkshopModIdSource = 'mod_info' | 'remote_mod_info' | 'steam_metadata' | 'workshop_description' | null;
+
+export type WorkshopModIdReason =
+    | 'downloader_unavailable'
+    | 'inspection_failed'
+    | 'queue_stalled'
+    | 'no_published_files';
+
 export interface WorkshopItem {
     workshopId: string;
     name: string;
@@ -15,7 +23,9 @@ export interface WorkshopItem {
     description: string;
     modIds: string[];
     modIdPending?: boolean;
-    modIdSource: 'mod_info' | 'remote_mod_info' | 'steam_metadata' | 'workshop_description' | null;
+    modIdSource: WorkshopModIdSource;
+    /** Why no Mod ID was found, when the server could tell. */
+    modIdReason?: WorkshopModIdReason | null;
     tags: string[];
     score: number | null;
     votesUp: number | null;
@@ -95,6 +105,7 @@ const workshopItem = (data: any): WorkshopItem => ({
     modIds: data.mod_ids || [],
     modIdPending: data.mod_id_pending === true,
     modIdSource: data.mod_id_source || null,
+    modIdReason: data.mod_id_reason || null,
     tags: data.tags || [],
     score: data.score ?? null,
     votesUp: data.votes_up ?? null,
@@ -291,7 +302,9 @@ export const saveWorkshop = async (
         workshopMods: Record<string, string[]>;
     },
     restart: boolean
-): Promise<WorkshopConfiguration & { restarted: boolean; restartError: string | null }> => {
+): Promise<
+    WorkshopConfiguration & { restarted: boolean; restartError: string | null; unresolvedWorkshopItems: string[] }
+> => {
     const { data } = await http.put(`/api/client/servers/${uuid}/howtoo/workshop`, {
         workshop_items: configuration.workshopItems,
         mods: configuration.mods,
@@ -309,6 +322,7 @@ export const saveWorkshop = async (
         detailsError: null,
         restarted: data.restarted,
         restartError: data.restart_error,
+        unresolvedWorkshopItems: data.unresolved_workshop_items || [],
     };
 };
 

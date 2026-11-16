@@ -1,4 +1,5 @@
 import { translateUiText } from '@/i18n/uiTranslations';
+import { getBrowserLocale } from '@/i18n/locale';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     faClock,
@@ -19,6 +20,16 @@ import classNames from 'classnames';
 import { capitalize } from '@/lib/strings';
 import { parseResourceStats, ResourceStatKey, ResourceStats } from '@/components/server/console/resourceStats';
 import useServerResourcePolling from '@/hooks/useServerResourcePolling';
+import {
+    AveragedMetric,
+    averageNetworkRate,
+    averageOf,
+    formatDuration,
+    loadHistory,
+    recordSample,
+    ResourceHistory,
+    saveHistory,
+} from '@/components/server/console/resourceAverages';
 
 type Stats = ResourceStats;
 
@@ -42,6 +53,18 @@ const Limit = ({ limit, children }: { limit: string | null; children: React.Reac
     </>
 );
 
+const TooltipLines = ({ title, lines }: { title: string; lines: string[] }) => (
+    <div className={'text-xs leading-5'}>
+        <p className={'mb-0.5 font-semibold text-gray-50'}>{title}</p>
+        {lines.map((line) => (
+            <p key={line}>{line}</p>
+        ))}
+    </div>
+);
+
+const percentOf = (value: number, limit: number | null | undefined): string | null =>
+    limit ? `${((value / limit) * 100).toFixed(0)}%` : null;
+
 const ServerDetailsBlock = ({ className }: { className?: string }) => {
     const [stats, setStats] = useState<Stats>({ memory: 0, cpu: 0, disk: 0, uptime: 0, tx: 0, rx: 0 });
     const [resourceUnavailable, setResourceUnavailable] = useState(false);
@@ -53,6 +76,22 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
     const instance = ServerContext.useStoreState((state) => state.socket.instance);
     const serverUuid = ServerContext.useStoreState((state) => state.server.data!.uuid);
     const limits = ServerContext.useStoreState((state) => state.server.data!.limits);
+
+    const [history, setHistory] = useState<ResourceHistory | null>(() => loadHistory(serverUuid));
+
+    useEffect(() => {
+        setHistory(loadHistory(serverUuid));
+    }, [serverUuid]);
+
+    // Every live sample of a running server feeds the averages shown on hover.
+    useEffect(() => {
+        if (status !== 'running' || stats.uptime <= 0) return;
+        setHistory((current) => {
+            const next = recordSample(current, stats, Date.now());
+            saveHistory(serverUuid, next);
+            return next;
+        });
+    }, [stats, status, serverUuid]);
 
     const textLimits = useMemo(
         () => ({
@@ -134,6 +173,72 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
         setStats((current) => ({ ...current, ...patch }));
     });
 
+    const locale = getBrowserLocale() === 'pt' ? 'pt-BR' : 'en-US';
+    const now = Date.now();
+    const observed =
+        history &&
+        translateUiText('Observado por {{duration}}, desde {{time}} ({{count}} leituras).', {
+            duration: formatDuration(now - history.observedSince),
+            time: new Date(history.observedSince).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+            count: history.metrics.cpu.samples,
+        });
+
+    const averageTooltip = (
+        metric: AveragedMetric,
+        format: (value: number) => string,
+        limit?: number | null
+    ): React.ReactChild => {
+        if (!history || status !== 'running') {
+            return (
+                <TooltipLines
+                    title={translateUiText('Consumo médio')}
+                    lines={[translateUiText('Sem dados: a média é calculada enquanto o servidor está ligado.')]}
+                />
+            );
+        }
+        const average = averageOf(history, metric, now);
+        const ofLimit = percentOf(average, limit);
+
+        return (
+            <TooltipLines
+                title={translateUiText('Consumo médio do servidor')}
+                lines={[
+                    `${translateUiText('Média:')} ${format(average)}${
+                        ofLimit ? ` (${translateUiText('{{percent}} do limite', { percent: ofLimit })})` : ''
+                    }`,
+                    `${translateUiText('Pico:')} ${format(history.metrics[metric].peak)}`,
+                    observed as string,
+                ]}
+            />
+        );
+    };
+
+    const networkTooltip = (key: 'rx' | 'tx'): React.ReactChild => {
+        const average = averageNetworkRate(stats, key);
+        if (status !== 'running' || average === null) {
+            return (
+                <TooltipLines
+                    title={translateUiText('Consumo médio')}
+                    lines={[translateUiText('Sem dados: a média é calculada enquanto o servidor está ligado.')]}
+                />
+            );
+        }
+        const current = history?.[key === 'rx' ? 'rxRate' : 'txRate'];
+
+        return (
+            <TooltipLines
+                title={translateUiText('Tráfego médio desde que o servidor ligou')}
+                lines={[
+                    `${translateUiText('Média:')} ${bytesToString(average)}/s (${formatDuration(stats.uptime)})`,
+                    ...(current !== null && current !== undefined
+                        ? [`${translateUiText('Agora:')} ${bytesToString(current)}/s`]
+                        : []),
+                    `${translateUiText('Total:')} ${bytesToString(stats[key])}`,
+                ]}
+            />
+        );
+    };
+
     return (
         <div className={classNames('min-w-0', className)}>
             {resourceUnavailable && (
@@ -169,6 +274,7 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
                 icon={faMicrochip}
                 title={translateUiText('CPU Load')}
                 color={getBackgroundColor(stats.cpu, limits.cpu)}
+                tooltip={averageTooltip('cpu', (value) => `${value.toFixed(2)}%`, limits.cpu)}
                 iconColor={'#c4b5fd'}
                 iconBackground={'rgba(139, 92, 246, 0.14)'}
             >
@@ -182,6 +288,7 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
                 icon={faMemory}
                 title={translateUiText('Memory')}
                 color={getBackgroundColor(stats.memory / 1024, limits.memory * 1024)}
+                tooltip={averageTooltip('memory', bytesToString, limits.memory ? mbToBytes(limits.memory) : null)}
                 iconColor={'#67e8f9'}
                 iconBackground={'rgba(6, 182, 212, 0.14)'}
             >
@@ -195,6 +302,7 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
                 icon={faHdd}
                 title={translateUiText('Disk')}
                 color={getBackgroundColor(stats.disk / 1024, limits.disk * 1024)}
+                tooltip={averageTooltip('disk', bytesToString, limits.disk ? mbToBytes(limits.disk) : null)}
                 iconColor={'#fcd34d'}
                 iconBackground={'rgba(245, 158, 11, 0.14)'}
             >
@@ -203,6 +311,7 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
             <StatBlock
                 icon={faCloudDownloadAlt}
                 title={translateUiText('Network (Inbound)')}
+                tooltip={networkTooltip('rx')}
                 iconColor={'#6ee7b7'}
                 iconBackground={'rgba(16, 185, 129, 0.14)'}
             >
@@ -215,6 +324,7 @@ const ServerDetailsBlock = ({ className }: { className?: string }) => {
             <StatBlock
                 icon={faCloudUploadAlt}
                 title={translateUiText('Network (Outbound)')}
+                tooltip={networkTooltip('tx')}
                 iconColor={'#d8b4fe'}
                 iconBackground={'rgba(168, 85, 247, 0.14)'}
             >

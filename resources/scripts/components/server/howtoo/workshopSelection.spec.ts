@@ -2,7 +2,10 @@ import {
     addWorkshopSelection,
     appendWorkshopResults,
     hasWorkshopChanges,
+    parseManualModIds,
     removeWorkshopSelection,
+    toggleWorkshopModId,
+    withManualModIds,
 } from './workshopSelection';
 import { WorkshopConfiguration, WorkshopItem } from '@/api/server/howtoo';
 
@@ -70,5 +73,27 @@ describe('Workshop selection state', () => {
         const saved = { ...configuration, workshopItems: ['1', '2'], mods: ['Shared', 'Second'] };
 
         expect(hasWorkshopChanges(saved, saved.workshopItems, saved.mods)).toBe(false);
+    });
+
+    it('an item without detected Mod IDs can still be added to WorkshopItems', () => {
+        expect(addWorkshopSelection(['1'], ['Shared'], item('2', []))).toEqual({
+            workshopItems: ['1', '2'],
+            mods: ['Shared'],
+        });
+    });
+
+    it('manual Mod IDs are trimmed, deduplicated and lose the B42 backslash prefix', () => {
+        expect(parseManualModIds(' Alpha; \\Beta;;Alpha ; [J&G] SWAT Uniform ')).toEqual([
+            'Alpha',
+            'Beta',
+            '[J&G] SWAT Uniform',
+        ]);
+        expect(withManualModIds(item('2', []), ['Typed']).modIds).toEqual(['Typed']);
+        expect(withManualModIds(item('2', ['Known']), undefined).modIds).toEqual(['Known']);
+    });
+
+    it('toggling a Mod ID activates or deactivates it without touching the others', () => {
+        expect(toggleWorkshopModId(['A', 'B'], 'B')).toEqual(['A']);
+        expect(toggleWorkshopModId(['A'], 'B')).toEqual(['A', 'B']);
     });
 });
