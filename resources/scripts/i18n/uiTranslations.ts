@@ -46,12 +46,13 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
         'Seleção adicionada à configuração pendente. Salve para aplicar no servidor.':
             'Selection added to pending configuration. Save to apply it to the server.',
         'Uma coleção de móveis para personalizar as construções.': 'A furniture collection to customize buildings.',
-        'Usando os Mod IDs informados manualmente. Confira se estão corretos antes de salvar.':
-            'Using the manually entered Mod IDs. Check that they are correct before saving.',
-        '{{name}}: informe o Mod ID exato antes de adicionar ao servidor.':
-            '{{name}}: enter the exact Mod ID before adding it to the server.',
-        '{{name}}: não foi possível descobrir o Mod ID. Informe o valor exato de mod.info.':
-            '{{name}}: could not determine the Mod ID. Enter the exact value from mod.info.',
+        '{{name}}: não foi possível detectar os Mod IDs.': '{{name}}: could not detect the Mod IDs.',
+        'Detectando Mod IDs': 'Detecting Mod IDs',
+        'Mod IDs indisponíveis': 'Mod IDs unavailable',
+        'Lendo os arquivos de {{count}} itens do Workshop…': 'Reading files for {{count}} Workshop items…',
+        'Não foi possível detectar os Mod IDs de {{count}} itens.': 'Could not detect Mod IDs for {{count}} items.',
+        'Cole o link de uma coleção pública de Project Zomboid para detectar automaticamente os Workshop IDs e Mod IDs.':
+            'Paste the link to a public Project Zomboid collection to automatically detect Workshop IDs and Mod IDs.',
         'Copiar {{label}}': 'Copy {{label}}',
         'Remover {{id}}': 'Remove {{id}}',
         'Remover Mod ID {{id}}': 'Remove Mod ID {{id}}',
@@ -255,8 +256,10 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
             'A configuração do Project Zomboid mudou depois que esta página foi aberta. Recarregue antes de salvar.',
         'The selected Steam Workshop item could not be found.':
             'Não foi possível encontrar o item selecionado da Steam Workshop.',
-        'A selected Workshop item has no resolvable Mod ID. Use the advanced Mod ID fallback before saving.':
-            'Um item selecionado da Workshop não tem um Mod ID identificável. Informe o Mod ID manualmente antes de salvar.',
+        'Workshop Mod IDs are still being resolved or are unavailable. Try again in a moment.':
+            'Os Mod IDs do Workshop ainda estão sendo detectados ou estão indisponíveis. Tente novamente em instantes.',
+        'The Workshop configuration exceeds the limit of 500 Mod IDs.':
+            'A configuração do Workshop excede o limite de 500 Mod IDs.',
         'The Steam Workshop item was not found or is private/deleted.':
             'O item da Steam Workshop não foi encontrado, é privado ou foi excluído.',
         'The Steam Workshop URL is invalid.': 'A URL da Steam Workshop é inválida.',
@@ -405,10 +408,6 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
         'Waiting for QR code to load...': 'Aguarde o carregamento do código QR...',
         'You must enter the 6-digit code and your password to continue.':
             'Informe o código de 6 dígitos e sua senha para continuar.',
-        '{{name}}: enter the exact Mod ID before adding it to the server.':
-            '{{name}}: informe o Mod ID exato antes de adicionar ao servidor.',
-        '{{name}}: could not determine the Mod ID. Enter the exact value from mod.info.':
-            '{{name}}: não foi possível descobrir o Mod ID. Informe o valor exato de mod.info.',
         '{{filename}} installed in the mods directory.': '{{filename}} instalado na pasta de mods.',
         'Delete Task': 'Excluir tarefa',
         'Yes, remove subuser': 'Sim, remover subusuário',

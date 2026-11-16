@@ -91,12 +91,18 @@ final class SteamWorkshopService
     public function details(array $workshopIds): array
     {
         $this->requireCredential();
-        $ids = $this->workshopIds($workshopIds);
-        if ($ids === []) {
-            return [];
+        $items = [];
+        foreach (array_chunk($this->workshopIds($workshopIds), self::COLLECTION_DETAILS_BATCH) as $ids) {
+            array_push($items, ...$this->detailsBatch($ids));
         }
 
-        $cacheKey = 'howtoo:steam:details:' . sha1(implode(',', $ids));
+        return $items;
+    }
+
+    private function detailsBatch(array $ids): array
+    {
+
+        $cacheKey = 'howtoo:steam:details:v2:' . sha1(implode(',', $ids));
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($ids): array {
             $payload = ['itemcount' => count($ids)];
@@ -150,7 +156,7 @@ final class SteamWorkshopService
             throw new DisplayException('Only Project Zomboid Workshop collections can be imported.');
         }
 
-        $cacheKey = 'howtoo:steam:collection:' . $collectionId;
+        $cacheKey = 'howtoo:steam:collection:v2:' . $collectionId;
 
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($collectionId, $collection): array {
             try {
@@ -174,30 +180,20 @@ final class SteamWorkshopService
             }
             $ids = $this->collectionChildren($payload, $collectionId);
             $resolved = [];
-            // PublishedFileDetails accepts at most 100 IDs per request.
-            foreach (array_chunk($ids, self::COLLECTION_DETAILS_BATCH) as $batch) {
-                foreach ($this->details($batch) as $item) {
-                    if ($item['consumer_app_id'] === self::PROJECT_ZOMBOID_APP_ID
-                        && $item['file_type'] !== 2
-                        && in_array($item['workshop_id'], $batch, true)) {
-                        $resolved[$item['workshop_id']] = $item;
-                    }
+            foreach ($this->details($ids) as $item) {
+                if ($this->isProjectZomboidItem($item)) {
+                    $resolved[$item['workshop_id']] = $item;
                 }
             }
 
             $items = [];
             $unavailable = [];
-            $unresolved = [];
             foreach ($ids as $id) {
                 if (!isset($resolved[$id])) {
                     $unavailable[] = $id;
                     continue;
                 }
-                $item = $resolved[$id];
-                $items[] = $item;
-                if ($item['mod_ids'] === []) {
-                    $unresolved[] = $id;
-                }
+                $items[] = $resolved[$id];
             }
 
             return [
@@ -205,10 +201,14 @@ final class SteamWorkshopService
                 'name' => $collection['name'],
                 'total' => count($ids),
                 'items' => $items,
-                'unresolved_ids' => $unresolved,
                 'unavailable_ids' => $unavailable,
             ];
         });
+    }
+
+    public function isProjectZomboidItem(array $item): bool
+    {
+        return $item['consumer_app_id'] === self::PROJECT_ZOMBOID_APP_ID && $item['file_type'] !== 2;
     }
 
     /** @return string[] */
@@ -264,7 +264,7 @@ final class SteamWorkshopService
             ->all();
         $voteData = is_array($item['vote_data'] ?? null) ? $item['vote_data'] : [];
 
-        return [
+        return $this->modIds->resolveSteamItem($item) + [
             'workshop_id' => (string) ($item['publishedfileid'] ?? ''),
             // Internal-only Steam fields used to reject other games/collections.
             'file_type' => (int) ($item['file_type'] ?? 0),
@@ -272,8 +272,6 @@ final class SteamWorkshopService
             'name' => mb_substr(trim((string) ($item['title'] ?? 'Untitled mod')), 0, 180),
             'image' => filter_var($item['preview_url'] ?? null, FILTER_VALIDATE_URL) ?: null,
             'description' => mb_substr($description, 0, 12000),
-            'mod_ids' => $this->resolveModIds($item),
-            'mod_id_source' => $this->modIdSource($item),
             'tags' => $tags,
             'score' => isset($voteData['score']) ? (float) $voteData['score'] : null,
             'votes_up' => isset($voteData['votes_up']) ? (int) $voteData['votes_up'] : null,
@@ -283,28 +281,11 @@ final class SteamWorkshopService
             'metadata' => $item['metadata'] ?? null,
             'kv_tags' => $item['kv_tags'] ?? [],
             'raw_description' => (string) ($item['description'] ?? ''),
+            'content_manifest' => (string) ($item['hcontent_file'] ?? ''),
             'content_url' => filter_var($item['file_url'] ?? null, FILTER_VALIDATE_URL) ?: null,
             'content_size' => isset($item['file_size']) ? (int) $item['file_size'] : null,
             'updated_at' => isset($item['time_updated']) ? (int) $item['time_updated'] : null,
         ];
-    }
-
-    private function resolveModIds(array $item): array
-    {
-        $metadata = $this->modIds->fromSteamMetadata($item);
-
-        return $metadata !== [] ? $metadata : $this->modIds->fromDescription((string) ($item['description'] ?? ''));
-    }
-
-    private function modIdSource(array $item): ?string
-    {
-        if ($this->modIds->fromSteamMetadata($item) !== []) {
-            return 'steam_metadata';
-        }
-
-        return $this->modIds->fromDescription((string) ($item['description'] ?? '')) !== []
-            ? 'workshop_description'
-            : null;
     }
 
     private function plainText(string $value): string
@@ -322,7 +303,7 @@ final class SteamWorkshopService
             ->map(fn ($id): string => trim((string) $id))
             ->filter(fn (string $id): bool => preg_match('/^\d{1,20}$/', $id) === 1)
             ->unique()
-            ->take(100)
+            ->take(self::MAX_COLLECTION_ITEMS)
             ->values()
             ->all();
     }

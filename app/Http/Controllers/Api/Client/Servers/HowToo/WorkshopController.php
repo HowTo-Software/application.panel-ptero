@@ -37,26 +37,15 @@ class WorkshopController extends ClientApiController
         $configuration['details_error'] = null;
 
         try {
-            $configuration['details'] = $this->steam->details($configuration['workshop_items']);
+            $items = $this->steam->details($configuration['workshop_items']);
             $installed = $this->modIds->resolveInstalled($server, $configuration['workshop_items']);
-            $configuration['details'] = collect($configuration['details'])
-                ->map(function (array $item) use ($installed): array {
-                    $workshopId = $item['workshop_id'];
-                    if (($installed[$workshopId] ?? []) !== []) {
-                        $item['mod_ids'] = $installed[$workshopId];
-                        $item['mod_id_source'] = 'mod_info';
-                    } else {
-                        $resolved = $this->modIds->resolveSteamItem($item);
-                        if ($resolved['mod_ids'] !== []) {
-                            $item['mod_ids'] = $resolved['mod_ids'];
-                            $item['mod_id_source'] = $resolved['source'];
-                        }
-                    }
-
-                    return $this->publicItem($item);
-                })
-                ->values()
-                ->all();
+            $configuration['details'] = array_map(
+                fn (array $item): array => $this->publicItem(array_replace(
+                    $item,
+                    $this->modIds->resolveItem($item, $installed[$item['workshop_id']] ?? [], queue: false)
+                )),
+                $items,
+            );
         } catch (DisplayException $exception) {
             $configuration['details_error'] = $exception->getMessage();
         }
@@ -96,25 +85,16 @@ class WorkshopController extends ClientApiController
         }
 
         $result = $this->steam->collection($request->string('link')->toString());
-        // Reuse the existing mod.info reader for any items already installed.
-        // Bound batches preserve the resolver's 100 Workshop ID limit.
-        $installed = [];
-        foreach (array_chunk(array_column($result['items'], 'workshop_id'), 100) as $batch) {
-            $installed = array_merge($installed, $this->modIds->resolveInstalled($server, $batch));
-        }
-
-        $result['items'] = collect($result['items'])
-            ->map(function (array $item) use ($installed): array {
-                if (($installed[$item['workshop_id']] ?? []) !== []) {
-                    $item['mod_ids'] = $installed[$item['workshop_id']];
-                    $item['mod_id_source'] = 'mod_info';
-                }
-
-                return $this->publicItem($item);
-            })
-            ->all();
+        $installed = $this->modIds->resolveInstalled($server, array_column($result['items'], 'workshop_id'));
+        $result['items'] = array_map(
+            fn (array $item): array => $this->publicItem(array_replace(
+                $item,
+                $this->modIds->resolveItem($item, $installed[$item['workshop_id']] ?? [])
+            )),
+            $result['items'],
+        );
         $result['unresolved_ids'] = collect($result['items'])
-            ->filter(fn (array $item): bool => $item['mod_ids'] === [])
+            ->filter(fn (array $item): bool => $item['mod_ids'] === [] && !$item['mod_id_pending'])
             ->pluck('workshop_id')
             ->values()
             ->all();
@@ -129,15 +109,16 @@ class WorkshopController extends ClientApiController
         }
 
         $item = $this->steam->details([$workshopId])[0] ?? null;
-        if (!$item || $item['workshop_id'] !== $workshopId) {
+        if (!$item || $item['workshop_id'] !== $workshopId || !$this->steam->isProjectZomboidItem($item)) {
             throw new DisplayException('The selected Steam Workshop item could not be found.');
         }
 
-        $resolved = $this->modIds->resolve($server, $workshopId, $item);
-        $item['mod_ids'] = $resolved['mod_ids'];
-        $item['mod_id_source'] = $resolved['source'];
+        $installed = $this->modIds->resolveInstalled($server, [$workshopId]);
 
-        return new JsonResponse($this->publicItem($item));
+        return new JsonResponse($this->publicItem(array_replace(
+            $item,
+            $this->modIds->resolveItem($item, $installed[$workshopId] ?? [])
+        )));
     }
 
     public function update(WorkshopUpdateRequest $request, Server $server): JsonResponse
@@ -148,7 +129,7 @@ class WorkshopController extends ClientApiController
             $server,
             $workshopItems,
             $request->input('mods'),
-            $request->input('workshop_mods'),
+            $request->input('workshop_mods', []),
             $current,
         );
         $configuration = $this->config->save(
@@ -190,6 +171,7 @@ class WorkshopController extends ClientApiController
             'description',
             'mod_ids',
             'mod_id_source',
+            'mod_id_pending',
             'tags',
             'score',
             'votes_up',
@@ -215,7 +197,7 @@ class WorkshopController extends ClientApiController
         try {
             $details = collect($this->steam->details($workshopItems))->keyBy('workshop_id');
         } catch (DisplayException) {
-            // Installed mod.info files and the explicit advanced fallback remain available.
+            // Installed mod.info files remain available when the Steam request fails.
         }
         $installed = $this->modIds->resolveInstalled($server, $workshopItems);
         $required = [];
@@ -223,29 +205,31 @@ class WorkshopController extends ClientApiController
         $added = array_diff($workshopItems, $current['workshop_items']);
 
         foreach ($workshopItems as $workshopId) {
+            $isNew = in_array($workshopId, $added, true);
             $modIds = $installed[$workshopId] ?? [];
-            if ($modIds === [] && $details->has($workshopId)) {
-                $modIds = $this->modIds->resolveSteamItem($details->get($workshopId))['mod_ids'];
+            $item = $details->get($workshopId);
+            if ($modIds === [] && is_array($item) && $this->steam->isProjectZomboidItem($item)) {
+                $modIds = $this->modIds->resolveItem($item, queue: $isNew)['mod_ids'];
             }
             if ($modIds === []) {
-                $modIds = $workshopMods[$workshopId] ?? [];
-            }
-
-            if ($modIds === [] && in_array($workshopId, $added, true)) {
-                $unresolvedAdded[] = $workshopId;
+                if ($isNew) {
+                    $unresolvedAdded[] = $workshopId;
+                } else {
+                    $modIds = $workshopMods[$workshopId] ?? [];
+                }
             }
             $required = array_merge($required, $modIds);
         }
 
         if ($unresolvedAdded !== []) {
-            throw new DisplayException('A selected Workshop item has no resolvable Mod ID. Use the advanced Mod ID fallback before saving.');
+            throw new DisplayException('Workshop Mod IDs are still being resolved or are unavailable. Try again in a moment.');
         }
 
-        return collect(array_merge($submittedMods, $required))
-            ->map(fn ($id): string => trim((string) $id))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+        $mods = array_values(array_unique(array_merge($submittedMods, $required)));
+        if (count($mods) > 500) {
+            throw new DisplayException('The Workshop configuration exceeds the limit of 500 Mod IDs.');
+        }
+
+        return $mods;
     }
 }

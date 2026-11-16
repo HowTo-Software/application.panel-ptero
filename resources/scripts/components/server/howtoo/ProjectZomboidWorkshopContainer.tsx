@@ -201,8 +201,7 @@ const AddedCount = styled.span`
     font-size: 0.66rem;
 `;
 
-const manualModIds = (value: string) =>
-    uniqueWorkshopValues(value.split(/[;,]/)).filter((id) => /^[A-Za-z0-9_.-]{1,128}$/.test(id));
+const manualModIds = (value: string) => uniqueWorkshopValues(value.split(';')).filter((id) => id.length <= 128);
 
 export default () => {
     const server = ServerContext.useStoreState((state) => state.server.data!);
@@ -222,8 +221,6 @@ export default () => {
     const [categoryTags, setCategoryTags] = useState<string[]>([]);
     const [selectedCandidates, setSelectedCandidates] = useState<Map<string, WorkshopItem>>(new Map());
     const [importedCollectionDetails, setImportedCollectionDetails] = useState<WorkshopItem[]>([]);
-    const [manualIds, setManualIds] = useState<Record<string, string>>({});
-    const [manualFallback, setManualFallback] = useState<Set<string>>(new Set());
     const [manualMod, setManualMod] = useState('');
     const [showManualEditor, setShowManualEditor] = useState(false);
     const [detailItem, setDetailItem] = useState<WorkshopItem | null>(null);
@@ -231,6 +228,7 @@ export default () => {
     const [searching, setSearching] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [resolving, setResolving] = useState<string | null>(null);
+    const resolutionRequest = useRef<AbortController>();
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [notice, setNotice] = useState('');
@@ -293,6 +291,7 @@ export default () => {
     useEffect(() => {
         return () => {
             catalogRequestId.current += 1;
+            resolutionRequest.current?.abort();
         };
     }, []);
 
@@ -368,57 +367,32 @@ export default () => {
             return;
         }
 
+        const controller = new AbortController();
+        resolutionRequest.current = controller;
+        const { signal } = controller;
         setResolving(item.workshopId);
         setError('');
-        let resolved = item;
-        if (!resolved.modIds.length) {
-            try {
-                resolved = await resolveWorkshopItem(server.uuid, item.workshopId);
-                setResults((current) =>
-                    current.map((entry) =>
-                        entry.workshopId === resolved.workshopId ? { ...entry, ...resolved } : entry
-                    )
-                );
-            } catch (requestError) {
-                const fallbackIds = manualModIds(manualIds[item.workshopId] || '');
-                if (!fallbackIds.length) {
-                    setManualFallback((current) => new Set(current).add(item.workshopId));
-                    setError(
-                        translateUiText(
-                            '{{name}}: não foi possível descobrir o Mod ID. Informe o valor exato de mod.info.',
-                            { name: item.name }
-                        )
-                    );
-                    setResolving(null);
-                    return;
-                }
-                resolved = { ...item, modIds: fallbackIds, modIdSource: null };
-                setError(
-                    translateUiText(
-                        'Usando os Mod IDs informados manualmente. Confira se estão corretos antes de salvar.'
-                    )
-                );
+        try {
+            let resolved = await resolveWorkshopItem(server.uuid, item.workshopId, signal);
+            while (resolved.modIdPending && !signal.aborted) {
+                await new Promise<void>((done) => window.setTimeout(done, 6000));
+                if (signal.aborted) return;
+                resolved = await resolveWorkshopItem(server.uuid, item.workshopId, signal);
             }
-        }
-
-        const ids = resolved.modIds.length ? resolved.modIds : manualModIds(manualIds[item.workshopId] || '');
-        if (!ids.length) {
-            setManualFallback((current) => new Set(current).add(item.workshopId));
-            setError(
-                translateUiText('{{name}}: informe o Mod ID exato antes de adicionar ao servidor.', { name: item.name })
+            if (signal.aborted) return;
+            if (!resolved.modIds.length) {
+                setError(translateUiText('{{name}}: não foi possível detectar os Mod IDs.', { name: item.name }));
+                return;
+            }
+            setResults((current) =>
+                current.map((entry) => (entry.workshopId === resolved.workshopId ? { ...entry, ...resolved } : entry))
             );
-            setResolving(null);
-            return;
+            setSelectedCandidates((current) => new Map(current).set(resolved.workshopId, resolved));
+        } catch (cause) {
+            if (!signal.aborted) setError(httpErrorToHuman(cause));
+        } finally {
+            if (!signal.aborted) setResolving(null);
         }
-
-        resolved = { ...resolved, modIds: ids };
-        setSelectedCandidates((current) => new Map(current).set(resolved.workshopId, resolved));
-        setManualFallback((current) => {
-            const next = new Set(current);
-            next.delete(item.workshopId);
-            return next;
-        });
-        setResolving(null);
     };
 
     const addSelected = () => {
@@ -621,13 +595,9 @@ export default () => {
                                 items={visibleItems}
                                 selected={new Set(selectedCandidates.keys())}
                                 configured={configured}
-                                manualIds={manualIds}
-                                manualFallback={manualFallback}
+                                resolving={resolving}
                                 onSelect={(item) => void selectCandidate(item)}
                                 onOpen={setDetailItem}
-                                onManualIdChange={(id, value) =>
-                                    setManualIds((current) => ({ ...current, [id]: value }))
-                                }
                                 emptyMessage={
                                     catalogMode === 'installed'
                                         ? translateUiText('Ainda não há Workshop IDs salvos neste servidor.')

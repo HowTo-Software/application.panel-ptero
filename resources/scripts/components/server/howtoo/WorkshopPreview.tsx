@@ -380,11 +380,8 @@ function PreviewContent() {
                                 items={visibleItems}
                                 selected={new Set(selected.map((item) => item.workshopId))}
                                 configured={new Set(configured.map((item) => item.workshopId))}
-                                manualIds={{}}
-                                manualFallback={new Set()}
                                 onSelect={selectItem}
                                 onOpen={setDetail}
-                                onManualIdChange={() => undefined}
                             />
                         </Surface>
                         <Surface>

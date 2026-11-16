@@ -37,6 +37,8 @@ test -s public/index.php
 test -s public/assets/manifest.json
 test ! -e /app/.env
 test ! -e /app/var/.env
+test -x /usr/local/bin/hts-workshop-download
+/usr/share/dotnet/dotnet /opt/workshop/DepotDownloader.dll --version >/dev/null
 php -l artisan
 php -l public/index.php
 

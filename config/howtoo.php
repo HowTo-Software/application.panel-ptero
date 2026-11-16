@@ -7,6 +7,9 @@ return [
         'system_character_budget' => (int) env('AI_SYSTEM_CHARACTER_BUDGET', 12000),
         'max_output_tokens' => (int) env('AI_MAX_OUTPUT_TOKENS', 1000),
     ],
+    'workshop' => [
+        'downloader' => env('STEAM_WORKSHOP_DOWNLOADER', '/usr/local/bin/hts-workshop-download'),
+    ],
     'providers' => [
         'ollama' => [
             'enabled' => env('FEATURE_OLLAMA', true),
