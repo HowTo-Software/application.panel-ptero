@@ -3,6 +3,7 @@ import { getBrowserLocale } from '@/i18n/locale';
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components/macro';
 import Button from '@/components/elements/Button';
+import Input from '@/components/elements/Input';
 import Can from '@/components/elements/Can';
 import { WorkshopBrowseMode, WorkshopItem } from '@/api/server/howtoo';
 
