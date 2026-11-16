@@ -49,6 +49,17 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
         '{{name}}: não foi possível detectar os Mod IDs.': '{{name}}: could not detect the Mod IDs.',
         'Detectando Mod IDs': 'Detecting Mod IDs',
         'Mod IDs indisponíveis': 'Mod IDs unavailable',
+        'Observado por {{duration}}, desde {{time}} ({{count}} leituras).':
+            'Observed for {{duration}}, since {{time}} ({{count}} readings).',
+        'Consumo médio': 'Average usage',
+        'Consumo médio do servidor': 'Average server usage',
+        'Sem dados: a média é calculada enquanto o servidor está ligado.':
+            'No data: the average is calculated while the server is running.',
+        'Média:': 'Average:',
+        '{{percent}} do limite': '{{percent}} of the limit',
+        'Pico:': 'Peak:',
+        'Tráfego médio desde que o servidor ligou': 'Average traffic since the server started',
+        'Agora:': 'Now:',
         '{{name}}: Mod ID não detectado ({{reason}}). O item foi selecionado mesmo assim; depois de adicioná-lo, informe o Mod ID na lista lateral ou salve e inicie o servidor para o painel ler o mod.info baixado.':
             '{{name}}: Mod ID not detected ({{reason}}). The item was selected anyway; after adding it, type the Mod ID in the side list, or save and start the server so the panel reads the downloaded mod.info.',
         'a leitura dos arquivos ainda não terminou': 'reading the files has not finished yet',
