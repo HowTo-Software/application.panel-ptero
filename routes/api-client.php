@@ -172,6 +172,7 @@ Route::group([
 
         Route::get('/workshop', [Client\Servers\HowToo\WorkshopController::class, 'index']);
         Route::get('/workshop/search', [Client\Servers\HowToo\WorkshopController::class, 'search']);
+        Route::get('/workshop/collection', [Client\Servers\HowToo\WorkshopController::class, 'collection']);
         Route::get('/workshop/{workshopId}/resolve', [Client\Servers\HowToo\WorkshopController::class, 'resolve'])
             ->whereNumber('workshopId');
         Route::put('/workshop', [Client\Servers\HowToo\WorkshopController::class, 'update']);

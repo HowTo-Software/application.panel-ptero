@@ -16,6 +16,7 @@ use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopReadRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopSearchRequest;
 use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopUpdateRequest;
+use Pterodactyl\Http\Requests\Api\Client\Servers\HowToo\WorkshopCollectionRequest;
 
 class WorkshopController extends ClientApiController
 {
@@ -86,6 +87,39 @@ class WorkshopController extends ClientApiController
         $results['items'] = collect($results['items'])->map(fn (array $item): array => $this->publicItem($item))->all();
 
         return new JsonResponse($results);
+    }
+
+    public function collection(WorkshopCollectionRequest $request, Server $server): JsonResponse
+    {
+        if (!$this->gameContext->for($server)['project_zomboid']) {
+            throw new DisplayException('Workshop Manager is only available for Project Zomboid servers.');
+        }
+
+        $result = $this->steam->collection($request->string('link')->toString());
+        // Reuse the existing mod.info reader for any items already installed.
+        // Bound batches preserve the resolver's 100 Workshop ID limit.
+        $installed = [];
+        foreach (array_chunk(array_column($result['items'], 'workshop_id'), 100) as $batch) {
+            $installed = array_merge($installed, $this->modIds->resolveInstalled($server, $batch));
+        }
+
+        $result['items'] = collect($result['items'])
+            ->map(function (array $item) use ($installed): array {
+                if (($installed[$item['workshop_id']] ?? []) !== []) {
+                    $item['mod_ids'] = $installed[$item['workshop_id']];
+                    $item['mod_id_source'] = 'mod_info';
+                }
+
+                return $this->publicItem($item);
+            })
+            ->all();
+        $result['unresolved_ids'] = collect($result['items'])
+            ->filter(fn (array $item): bool => $item['mod_ids'] === [])
+            ->pluck('workshop_id')
+            ->values()
+            ->all();
+
+        return new JsonResponse($result);
     }
 
     public function resolve(WorkshopReadRequest $request, Server $server, string $workshopId): JsonResponse
