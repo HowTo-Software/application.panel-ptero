@@ -162,7 +162,10 @@ class SteamWorkshopServiceTest extends TestCase
             ],
         ];
 
-        $this->assertSame(['123', '456'], $this->invoke('collectionChildren', [$payload, '3730991494']));
+        $this->assertSame([
+            ['workshop_id' => '123', 'file_type' => 0],
+            ['workshop_id' => '456', 'file_type' => 0],
+        ], $this->invoke('collectionChildren', [$payload, '3730991494']));
     }
 
     public function testCollectionResponseRejectsForeignOrMissingCollection(): void
