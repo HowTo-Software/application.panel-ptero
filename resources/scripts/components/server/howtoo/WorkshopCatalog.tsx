@@ -3,7 +3,6 @@ import { getBrowserLocale } from '@/i18n/locale';
 import React, { useEffect, useState } from 'react';
 import styled from 'styled-components/macro';
 import Button from '@/components/elements/Button';
-import Input from '@/components/elements/Input';
 import Can from '@/components/elements/Can';
 import { WorkshopBrowseMode, WorkshopItem } from '@/api/server/howtoo';
 
@@ -379,21 +378,17 @@ export function WorkshopCards({
     items,
     selected,
     configured,
-    manualIds,
-    manualFallback,
+    resolving,
     onSelect,
     onOpen,
-    onManualIdChange,
     emptyMessage,
 }: {
     items: WorkshopItem[];
     selected: Set<string>;
     configured: Set<string>;
-    manualIds: Record<string, string>;
-    manualFallback: Set<string>;
+    resolving?: string | null;
     onSelect: (item: WorkshopItem) => void;
     onOpen: (item: WorkshopItem) => void;
-    onManualIdChange: (workshopId: string, value: string) => void;
     emptyMessage?: string;
 }) {
     if (!items.length)
@@ -437,14 +432,6 @@ export function WorkshopCards({
                                     <span key={tag}>{tag}</span>
                                 ))}
                             </Tags>
-                            {manualFallback.has(item.workshopId) && (
-                                <Input
-                                    value={manualIds[item.workshopId] || ''}
-                                    onChange={(event) => onManualIdChange(item.workshopId, event.currentTarget.value)}
-                                    aria-label={translateUiText('Mod IDs para {{name}}', { name: item.name })}
-                                    placeholder={translateUiText('Mod IDs exatos, separados por ;')}
-                                />
-                            )}
                             <CardFooter>
                                 <span>
                                     {rating ? `★ ${rating} · ` : ''}
@@ -458,7 +445,7 @@ export function WorkshopCards({
                                     <button
                                         type='button'
                                         onClick={() => onSelect(item)}
-                                        disabled={isConfigured}
+                                        disabled={isConfigured || !!resolving}
                                         aria-label={
                                             isConfigured
                                                 ? translateUiText('Já configurado')
@@ -470,7 +457,13 @@ export function WorkshopCards({
                                                 : translateUiText('Selecionar mod')
                                         }
                                     >
-                                        {isConfigured ? '✓' : selected.has(item.workshopId) ? '✓' : '+'}
+                                        {resolving === item.workshopId
+                                            ? translateUiText('Detectando Mod IDs')
+                                            : isConfigured
+                                            ? '✓'
+                                            : selected.has(item.workshopId)
+                                            ? '✓'
+                                            : '+'}
                                     </button>
                                 </Can>
                             </CardFooter>

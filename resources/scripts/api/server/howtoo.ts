@@ -14,6 +14,7 @@ export interface WorkshopItem {
     image: string | null;
     description: string;
     modIds: string[];
+    modIdPending?: boolean;
     modIdSource: 'mod_info' | 'remote_mod_info' | 'steam_metadata' | 'workshop_description' | null;
     tags: string[];
     score: number | null;
@@ -92,6 +93,7 @@ const workshopItem = (data: any): WorkshopItem => ({
     image: data.image,
     description: data.description,
     modIds: data.mod_ids || [],
+    modIdPending: data.mod_id_pending === true,
     modIdSource: data.mod_id_source || null,
     tags: data.tags || [],
     score: data.score ?? null,
@@ -274,8 +276,12 @@ export const getWorkshopCollection = async (uuid: string, link: string): Promise
     };
 };
 
-export const resolveWorkshopItem = async (uuid: string, workshopId: string): Promise<WorkshopItem> => {
-    const { data } = await http.get(`/api/client/servers/${uuid}/howtoo/workshop/${workshopId}/resolve`);
+export const resolveWorkshopItem = async (
+    uuid: string,
+    workshopId: string,
+    signal?: AbortSignal
+): Promise<WorkshopItem> => {
+    const { data } = await http.get(`/api/client/servers/${uuid}/howtoo/workshop/${workshopId}/resolve`, { signal });
     return workshopItem(data);
 };
 

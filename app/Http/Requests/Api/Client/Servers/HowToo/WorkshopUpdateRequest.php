@@ -5,6 +5,7 @@ namespace Pterodactyl\Http\Requests\Api\Client\Servers\HowToo;
 use Pterodactyl\Models\Permission;
 use Pterodactyl\Contracts\Http\ClientPermissionsRequest;
 use Pterodactyl\Http\Requests\Api\Client\ClientApiRequest;
+use Pterodactyl\Services\HowToo\ZomboidWorkshopConfigService;
 
 class WorkshopUpdateRequest extends ClientApiRequest implements ClientPermissionsRequest
 {
@@ -32,10 +33,10 @@ class WorkshopUpdateRequest extends ClientApiRequest implements ClientPermission
             'workshop_items' => 'present|array|max:500',
             'workshop_items.*' => ['required', 'string', 'regex:/^\d{1,20}$/'],
             'mods' => 'present|array|max:500',
-            'mods.*' => ['required', 'string', 'regex:/^[A-Za-z0-9_.-]{1,128}$/'],
-            'workshop_mods' => 'present|array|max:500',
-            'workshop_mods.*' => 'present|array|max:100',
-            'workshop_mods.*.*' => ['required', 'string', 'regex:/^[A-Za-z0-9_.-]{1,128}$/'],
+            'mods.*' => ['required', 'string', 'regex:' . ZomboidWorkshopConfigService::MOD_ID_PATTERN],
+            'workshop_mods' => 'sometimes|array|max:500',
+            'workshop_mods.*' => 'present|array|max:500',
+            'workshop_mods.*.*' => ['required', 'string', 'regex:' . ZomboidWorkshopConfigService::MOD_ID_PATTERN],
             'revision' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/'],
             'action' => 'required|string|in:save,restart',
         ];

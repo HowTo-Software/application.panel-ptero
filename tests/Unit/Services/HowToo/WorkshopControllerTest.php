@@ -56,7 +56,7 @@ class WorkshopControllerTest extends TestCase
         $request = \Mockery::mock(WorkshopUpdateRequest::class);
         $request->shouldReceive('input')->with('workshop_items')->andReturn([]);
         $request->shouldReceive('input')->with('mods')->andReturn(['Alpha']);
-        $request->shouldReceive('input')->with('workshop_mods')->andReturn([]);
+        $request->shouldReceive('input')->with('workshop_mods', [])->andReturn([]);
         $request->shouldReceive('input')->with('action')->andReturn('restart');
         $request->shouldReceive('string')->with('revision')->andReturn(Str::of(hash('sha256', $content)));
 

@@ -11,6 +11,8 @@ use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
 
 final class ZomboidWorkshopConfigService
 {
+    public const MOD_ID_PATTERN = '/^[^;\p{C}\p{Zl}\p{Zp}]{1,128}$/uD';
+
     public function __construct(
         private DaemonFileRepository $files,
         private ServerGameContext $gameContext,
@@ -167,7 +169,7 @@ final class ZomboidWorkshopConfigService
     {
         return collect($mods)
             ->map(fn ($mod): string => trim((string) $mod))
-            ->filter(fn (string $mod): bool => preg_match('/^[A-Za-z0-9_.-]{1,128}$/', $mod) === 1)
+            ->filter(fn (string $mod): bool => preg_match(self::MOD_ID_PATTERN, $mod) === 1)
             ->unique()
             ->take(500)
             ->values()

@@ -4,8 +4,11 @@ namespace Pterodactyl\Services\HowToo;
 
 use Carbon\CarbonImmutable;
 use Pterodactyl\Models\Server;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
-use GuzzleHttp\Exception\RequestException;
+use Illuminate\Support\Facades\Cache;
+use Symfony\Component\Process\Process;
+use Pterodactyl\Jobs\ResolveWorkshopModIds;
 use Pterodactyl\Repositories\Wings\DaemonFileRepository;
 use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Pterodactyl\Exceptions\Http\Connection\DaemonConnectionException;
@@ -32,36 +35,116 @@ final class ProjectZomboidModIdResolver
     ) {
     }
 
-    public function resolve(Server $server, string $workshopId, array $steamItem = []): array
+    /**
+     * Resolve an item using its installed files or an inspection of the published files.
+     * Descriptions are only a fallback when Steam does not expose the actual content.
+     */
+    public function resolveItem(array $item, array $installed = [], bool $queue = true): array
     {
-        $installed = $this->resolveInstalled($server, [$workshopId])[$workshopId] ?? [];
         if ($installed !== []) {
-            return ['mod_ids' => $installed, 'source' => 'mod_info'];
+            return ['mod_ids' => $installed, 'mod_id_source' => 'mod_info', 'mod_id_pending' => false];
         }
 
-        return $this->resolveSteamItem($steamItem, true);
-    }
+        $manifest = $this->manifestId($item);
+        $url = $item['content_url'] ?? null;
+        $hasArchive = is_string($url) && $this->trustedSteamContentUrl($url)
+            && (int) ($item['content_size'] ?? 0) <= self::MAX_REMOTE_ARCHIVE_SIZE && class_exists(\ZipArchive::class);
 
-    public function resolveSteamItem(array $steamItem, bool $allowRemoteArchive = false): array
-    {
-        $metadata = $this->fromSteamMetadata($steamItem);
-        if ($metadata !== []) {
-            return ['mod_ids' => $metadata, 'source' => 'steam_metadata'];
-        }
+        if (($manifest !== null && is_executable((string) config('howtoo.workshop.downloader'))) || $hasArchive) {
+            $key = $this->publishedCacheKey($item);
+            $result = $this->cache->get($key);
+            if ($result === null && $queue) {
+                if (Cache::add($key, ['state' => 'pending'], now()->addHours(2))) {
+                    try {
+                        ResolveWorkshopModIds::dispatch($key, $manifest, $hasArchive ? $url : null)->onQueue('workshop');
+                    } catch (\Throwable $exception) {
+                        Cache::forget($key);
+                        throw $exception;
+                    }
+                }
+                $result = $this->cache->get($key);
+            }
 
-        if ($allowRemoteArchive) {
-            $remote = $this->fromRemoteArchive($steamItem);
-            if ($remote !== []) {
-                return ['mod_ids' => $remote, 'source' => 'remote_mod_info'];
+            if (is_array($result)) {
+                $ids = $result['ids'] ?? [];
+
+                return [
+                    'mod_ids' => $ids,
+                    'mod_id_source' => $ids === [] ? null : 'remote_mod_info',
+                    'mod_id_pending' => $result['state'] === 'pending',
+                ];
             }
         }
 
-        $description = $this->fromDescription((string) ($steamItem['raw_description'] ?? ''));
+        return $this->resolveSteamItem($item) + ['mod_id_pending' => false];
+    }
+
+    public function resolveSteamItem(array $item): array
+    {
+        $metadata = $this->fromSteamMetadata($item);
+        $description = $this->fromDescription((string) ($item['raw_description'] ?? $item['description'] ?? ''));
 
         return [
-            'mod_ids' => $description,
-            'source' => $description === [] ? null : 'workshop_description',
+            'mod_ids' => $this->normalize(array_merge($metadata, $description)),
+            'mod_id_source' => $metadata !== [] ? 'steam_metadata' : ($description === [] ? null : 'workshop_description'),
         ];
+    }
+
+    public function inspectPublishedFiles(?string $manifest, ?string $url): array
+    {
+        $ids = $manifest === null ? [] : $this->fromWorkshopManifest($manifest);
+
+        return $ids === [] && $url !== null ? $this->fromRemoteArchive($url) : $ids;
+    }
+
+    private function manifestId(array $item): ?string
+    {
+        $id = (string) ($item['content_manifest'] ?? '');
+
+        return preg_match('/^[1-9][0-9]{0,19}$/D', $id) === 1 ? $id : null;
+    }
+
+    private function publishedCacheKey(array $item): string
+    {
+        $version = $this->manifestId($item) ?? ($item['updated_at'] ?? $item['content_url']);
+
+        return 'howtoo:pz-published-mod-ids:' . $item['workshop_id'] . ':' . sha1((string) $version);
+    }
+
+    private function fromWorkshopManifest(string $manifest): array
+    {
+        $downloader = (string) config('howtoo.workshop.downloader');
+        if (!is_executable($downloader) || preg_match('/^[1-9][0-9]{0,19}$/D', $manifest) !== 1) {
+            return [];
+        }
+
+        $directory = sys_get_temp_dir() . '/howtoo-pz-' . bin2hex(random_bytes(16));
+        if (!mkdir($directory, 0700)) {
+            return [];
+        }
+
+        try {
+            $process = new Process([$downloader, $manifest, $directory], $directory);
+            $process->setTimeout(45);
+            $process->disableOutput();
+            if ($process->run() !== 0) {
+                return [];
+            }
+
+            $ids = [];
+            foreach (File::allFiles($directory, true) as $file) {
+                if (!$file->isLink() && strcasecmp($file->getFilename(), 'mod.info') === 0
+                    && $file->getSize() <= self::MAX_MOD_INFO_SIZE) {
+                    $ids = array_merge($ids, $this->parseModInfo($file->getContents()));
+                }
+            }
+
+            return $this->normalize($ids);
+        } catch (\Symfony\Component\Process\Exception\RuntimeException) {
+            return [];
+        } finally {
+            File::deleteDirectory($directory);
+        }
     }
 
     /** @return array<string, string[]> */
@@ -71,7 +154,7 @@ final class ProjectZomboidModIdResolver
             ->map(fn ($id): string => trim((string) $id))
             ->filter(fn (string $id): bool => preg_match('/^\d{1,20}$/', $id) === 1)
             ->unique()
-            ->take(100)
+            ->take(500)
             ->values();
         $resolved = [];
         $pending = [];
@@ -93,11 +176,7 @@ final class ProjectZomboidModIdResolver
         foreach (self::WORKSHOP_ROOTS as $root) {
             try {
                 $entries = $repository->getDirectory($root);
-            } catch (DaemonConnectionException $exception) {
-                if ($this->isMissingPath($exception)) {
-                    continue;
-                }
-
+            } catch (DaemonConnectionException) {
                 continue;
             }
 
@@ -131,47 +210,66 @@ final class ProjectZomboidModIdResolver
         if (is_string($metadata) && $metadata !== '') {
             $decoded = json_decode($metadata, true);
             if (is_array($decoded)) {
-                array_walk_recursive($decoded, function ($value, $key) use (&$values): void {
-                    if (preg_match('/^(?:mod_?)?ids?$/i', (string) $key) === 1) {
-                        $values[] = (string) $value;
-                    }
-                });
+                $values = $this->metadataValues($decoded);
+            } else {
+                $values = $this->fromDescription($metadata);
             }
-            preg_match_all('/(?:^|[\r\n;,])\s*(?:mod_?)?ids?\s*[:=]\s*([^\r\n;,]+)/i', $metadata, $matches);
-            $values = array_merge($values, $matches[1]);
         }
 
         foreach (($item['kv_tags'] ?? []) as $tag) {
-            if (is_array($tag) && preg_match('/(?:mod_?)?ids?/i', (string) ($tag['key'] ?? '')) === 1) {
+            if (is_array($tag) && $this->isModIdKey((string) ($tag['key'] ?? ''))) {
                 $values[] = (string) ($tag['value'] ?? '');
             }
         }
 
-        return $this->normalize($values);
+        return $this->normalize($this->splitLists($values));
+    }
+
+    private function metadataValues(array $metadata): array
+    {
+        $values = [];
+        foreach ($metadata as $key => $value) {
+            if ($this->isModIdKey((string) $key)) {
+                foreach ((array) $value as $id) {
+                    if (is_string($id) || is_int($id)) {
+                        $values[] = (string) $id;
+                    }
+                }
+            } elseif (is_array($value)) {
+                $values = array_merge($values, $this->metadataValues($value));
+            }
+        }
+
+        return $values;
+    }
+
+    private function isModIdKey(string $key): bool
+    {
+        return preg_match('/^(?:mod[ _-]?)?ids?$/iD', $key) === 1;
     }
 
     public function fromDescription(string $description): array
     {
-        preg_match_all('/\bMod\s*IDs?\s*[:=]\s*([^\r\n\[<]+)/iu', $description, $matches);
+        $text = preg_replace('/<br\s*\/?\s*>|<\/(?:div|p|li)>/i', "\n", $description) ?? '';
+        $text = html_entity_decode(strip_tags($text), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $text = preg_replace('/\[\/?(?:b|i|u|code|noparse|h[1-6]|url|list|quote|color)(?:=[^\]\r\n]*)?\]/i', '', $text) ?? '';
+        preg_match_all('/\bMod[ _-]*IDs?\s*[:=][ \t]*([^\r\n]+)/iu', $text, $matches);
+        $values = preg_replace('~\s*/\s*Workshop ID:.*$~i', '', $matches[1]);
 
-        return $this->normalize($matches[1]);
+        return $this->normalize($this->splitLists($values));
     }
 
     public function parseModInfo(string $content): array
     {
-        preg_match_all('/^\s*id\s*=\s*([^\r\n#;]+)\s*$/im', $content, $matches);
+        $content = preg_replace('/^\xEF\xBB\xBF/', '', $content) ?? $content;
+        preg_match_all('/^[ \t]*id[ \t]*=[ \t]*([^\r\n;]+)\r?$/im', $content, $matches);
 
         return $this->normalize($matches[1]);
     }
 
-    private function fromRemoteArchive(array $item): array
+    private function fromRemoteArchive(string $url): array
     {
-        $url = $item['content_url'] ?? null;
-        $size = (int) ($item['content_size'] ?? 0);
-        if (!is_string($url) || !$this->trustedSteamContentUrl($url)) {
-            return [];
-        }
-        if ($size > self::MAX_REMOTE_ARCHIVE_SIZE || !class_exists(\ZipArchive::class)) {
+        if (!$this->trustedSteamContentUrl($url) || !class_exists(\ZipArchive::class)) {
             return [];
         }
 
@@ -217,7 +315,7 @@ final class ProjectZomboidModIdResolver
                 for ($index = 0; $index < $files; ++$index) {
                     $stat = $archive->statIndex($index);
                     $path = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
-                    if (basename($path) !== 'mod.info' || str_contains($path, '../')) {
+                    if (strcasecmp(basename($path), 'mod.info') !== 0 || str_contains($path, '../')) {
                         continue;
                     }
                     if ((int) ($stat['size'] ?? 0) > self::MAX_MOD_INFO_SIZE) {
@@ -268,7 +366,7 @@ final class ProjectZomboidModIdResolver
 
                 $path = "$directory/$name";
                 if (!($entry['file'] ?? true)) {
-                    if ($depth < self::MAX_DEPTH) {
+                    if ($depth < self::MAX_DEPTH && strcasecmp($name, 'media') !== 0) {
                         $queue[] = [$path, $depth + 1];
                     }
                     continue;
@@ -294,13 +392,16 @@ final class ProjectZomboidModIdResolver
     private function normalize(array $values): array
     {
         return collect($values)
-            ->flatMap(fn ($value): array => preg_split('/\s*[;,]\s*/', trim((string) $value)) ?: [])
-            ->map(fn (string $value): string => trim($value))
-            ->filter(fn (string $value): bool => preg_match('/^[A-Za-z0-9_.-]{1,128}$/', $value) === 1)
+            ->map(fn (string $value): string => ltrim(trim($value), '\\'))
+            ->filter(fn (string $value): bool => preg_match(ZomboidWorkshopConfigService::MOD_ID_PATTERN, $value) === 1)
             ->unique()
-            ->take(100)
             ->values()
             ->all();
+    }
+
+    private function splitLists(array $values): array
+    {
+        return collect($values)->flatMap(fn (string $value): array => preg_split('/[;,]/', $value) ?: [])->all();
     }
 
     private function cacheKey(Server $server, string $workshopId): string
@@ -322,29 +423,5 @@ final class ProjectZomboidModIdResolver
             || $host === 'steamcontent.com'
             || str_ends_with($host, '.steamcontent.com')
             || $host === 'steamusercontent-a.akamaihd.net';
-    }
-
-    private function isMissingPath(DaemonConnectionException $exception): bool
-    {
-        $previous = $exception->getPrevious();
-        if (!$previous instanceof RequestException || !$previous->hasResponse()) {
-            return false;
-        }
-
-        $response = $previous->getResponse();
-        if ($response->getStatusCode() === 404) {
-            return true;
-        }
-
-        if ($response->getStatusCode() !== 500) {
-            return false;
-        }
-
-        $body = mb_strtolower($response->getBody()->__toString());
-
-        return str_contains($body, 'no such file or directory')
-            || str_contains($body, 'file does not exist')
-            || str_contains($body, 'path does not exist')
-            || str_contains($body, 'not found');
     }
 }

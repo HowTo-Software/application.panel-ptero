@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+ulimit -f 65536
+
+exec /usr/share/dotnet/dotnet /opt/workshop/DepotDownloader.dll \
+    -app 108600 -ugc "$1" -dir "$2" -filelist /opt/workshop/mod-info-files.txt

@@ -39,6 +39,24 @@ class ProjectZomboidModIdResolverTest extends TestCase
         $this->assertSame(['CommonSenseFix'], $this->resolver->parseModInfo("id = CommonSenseFix\nposter=poster.png"));
     }
 
+    public function testPreservesPublishedIdsWithSpacesAndPunctuation(): void
+    {
+        $this->assertSame(
+            ['[J&G] SWAT Uniform', "GanydeBielovzki's Frockin Stompers!"],
+            $this->resolver->parseModInfo("\xEF\xBB\xBFid=[J&G] SWAT Uniform\r\nid=GanydeBielovzki's Frockin Stompers!\r\n"),
+        );
+    }
+
+    public function testMergesMultipleDeclaredIdsWithoutDuplicates(): void
+    {
+        $result = $this->resolver->resolveSteamItem([
+            'metadata' => json_encode(['modIds' => ['Alpha', 'Beta']]),
+            'raw_description' => '[b]Mod ID:[/b] Beta<br>Mod ID: [J&G] SWAT Uniform',
+        ]);
+
+        $this->assertSame(['Alpha', 'Beta', '[J&G] SWAT Uniform'], $result['mod_ids']);
+    }
+
     public function testItUsesStructuredSteamMetadataBeforeDescription(): void
     {
         $item = [
