@@ -1,0 +1,37 @@
+name: Format workshop collection PR
+
+on:
+  push:
+    branches:
+      - feat/steam-workshop-collection-import
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/steam-workshop-collection-import
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Format changed frontend files
+        run: |
+          yarn prettier --write resources/scripts/components/server/howtoo/WorkshopCollectionImport.tsx resources/scripts/components/server/howtoo/ProjectZomboidWorkshopContainer.tsx
+          yarn eslint resources/scripts/components/server/howtoo/WorkshopCollectionImport.tsx resources/scripts/components/server/howtoo/ProjectZomboidWorkshopContainer.tsx --ext .ts,.tsx
+      - name: Commit formatting
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add resources/scripts/components/server/howtoo/WorkshopCollectionImport.tsx resources/scripts/components/server/howtoo/ProjectZomboidWorkshopContainer.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m "style: format Steam collection import frontend"
+            git push origin HEAD:feat/steam-workshop-collection-import
+          fi
