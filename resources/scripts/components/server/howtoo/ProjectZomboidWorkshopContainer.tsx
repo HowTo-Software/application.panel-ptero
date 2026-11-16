@@ -242,9 +242,12 @@ export default () => {
     const configured = useMemo(() => new Set(workshopItems), [workshopItems]);
     const details = useMemo(() => {
         const map = new Map<string, WorkshopItem>();
-        [...(configuration?.details || []), ...results, ...importedCollectionDetails, ...Array.from(selectedCandidates.values())].forEach((item) =>
-            map.set(item.workshopId, item)
-        );
+        [
+            ...(configuration?.details || []),
+            ...results,
+            ...importedCollectionDetails,
+            ...Array.from(selectedCandidates.values()),
+        ].forEach((item) => map.set(item.workshopId, item));
         return map;
     }, [configuration?.details, results, importedCollectionDetails, selectedCandidates]);
     const changed = hasWorkshopChanges(configuration, workshopItems, mods);
@@ -560,7 +563,9 @@ export default () => {
                                     setMods(nextMods);
                                     setImportedCollectionDetails((current) => appendWorkshopResults(current, items));
                                     setNotice(
-                                        translateUiText('Coleção adicionada às alterações pendentes. Clique em Salvar para aplicar no servidor.')
+                                        translateUiText(
+                                            'Coleção adicionada às alterações pendentes. Clique em Salvar para aplicar no servidor.'
+                                        )
                                     );
                                     return true;
                                 }}

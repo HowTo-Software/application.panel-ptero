@@ -2,7 +2,12 @@ import React, { FormEvent, useMemo, useState } from 'react';
 import Button from '@/components/elements/Button';
 import Input from '@/components/elements/Input';
 import { httpErrorToHuman } from '@/api/http';
-import { getWorkshopCollection, resolveWorkshopItem, WorkshopCollectionResult, WorkshopItem } from '@/api/server/howtoo';
+import {
+    getWorkshopCollection,
+    resolveWorkshopItem,
+    WorkshopCollectionResult,
+    WorkshopItem,
+} from '@/api/server/howtoo';
 import { translateUiText } from '@/i18n/uiTranslations';
 import { uniqueWorkshopValues } from './workshopSelection';
 
@@ -80,10 +85,18 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
     const apply = () => {
         if (!toAdd.length) return;
         if (!onImport(toAdd)) {
-            setError(translateUiText('A coleção excede o limite de 500 Workshop IDs ou Mod IDs. Remova alguns itens antes de importar.'));
+            setError(
+                translateUiText(
+                    'A coleção excede o limite de 500 Workshop IDs ou Mod IDs. Remova alguns itens antes de importar.'
+                )
+            );
             return;
         }
-        setNotice(translateUiText('Mods da coleção adicionados às alterações pendentes. Clique em Salvar para aplicar no servidor.'));
+        setNotice(
+            translateUiText(
+                'Mods da coleção adicionados às alterações pendentes. Clique em Salvar para aplicar no servidor.'
+            )
+        );
     };
 
     return (
@@ -101,9 +114,14 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                 {translateUiText('Importar coleção do Steam Workshop')}
             </h3>
             <p style={{ color: 'var(--hts-ink-muted)', fontSize: '.77rem', margin: '.35rem 0 .7rem' }}>
-                {translateUiText('Cole o link de uma coleção pública de Project Zomboid. Workshop IDs e Mod IDs serão coletados automaticamente quando disponíveis.')}
+                {translateUiText(
+                    'Cole o link de uma coleção pública de Project Zomboid. Workshop IDs e Mod IDs serão coletados automaticamente quando disponíveis.'
+                )}
             </p>
-            <form onSubmit={(event) => void previewCollection(event)} style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem' }}>
+            <form
+                onSubmit={(event) => void previewCollection(event)}
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem' }}
+            >
                 <Input
                     aria-label={translateUiText('Link da coleção do Steam')}
                     value={link}
@@ -139,7 +157,9 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                     {!!missing.length && (
                         <p style={{ color: '#fbbf24', fontSize: '.75rem', marginBottom: '.55rem' }}>
                             {missing.length}{' '}
-                            {translateUiText('itens não informam um Mod ID. Informe o ID exato do mod.info abaixo para incluí-los.')}
+                            {translateUiText(
+                                'itens não informam um Mod ID. Informe o ID exato do mod.info abaixo para incluí-los.'
+                            )}
                         </p>
                     )}
                     <div style={{ maxHeight: '21rem', overflowY: 'auto', display: 'grid', gap: '.4rem' }}>
@@ -154,11 +174,26 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                                     fontSize: '.77rem',
                                 }}
                             >
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '.5rem', justifyContent: 'space-between' }}>
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        flexWrap: 'wrap',
+                                        gap: '.5rem',
+                                        justifyContent: 'space-between',
+                                    }}
+                                >
                                     <span style={{ overflowWrap: 'anywhere' }}>
                                         <strong>{item.name}</strong> · {item.workshopId}
                                     </span>
-                                    <span style={{ color: configured.has(item.workshopId) ? '#86efac' : item.modIds.length ? '#a5b4fc' : '#fbbf24' }}>
+                                    <span
+                                        style={{
+                                            color: configured.has(item.workshopId)
+                                                ? '#86efac'
+                                                : item.modIds.length
+                                                ? '#a5b4fc'
+                                                : '#fbbf24',
+                                        }}
+                                    >
                                         {configured.has(item.workshopId)
                                             ? translateUiText('Já configurado')
                                             : item.modIds.length
@@ -167,47 +202,53 @@ export default function WorkshopCollectionImport({ uuid, configured, onImport }:
                                     </span>
                                 </div>
                                 {!!item.modIds.length && (
-                                    <p style={{ marginTop: '.25rem', color: 'var(--hts-ink-muted)', overflowWrap: 'anywhere' }}>
+                                    <p
+                                        style={{
+                                            marginTop: '.25rem',
+                                            color: 'var(--hts-ink-muted)',
+                                            overflowWrap: 'anywhere',
+                                        }}
+                                    >
                                         Mod ID: {item.modIds.join('; ')}
                                     </p>
                                 )}
                                 {!item.modIds.length && !configured.has(item.workshopId) && (
                                     <>
-                                    <Button
-                                        type='button'
-                                        isSecondary
-                                        size='xsmall'
-                                        disabled={!!resolving}
-                                        isLoading={resolving === item.workshopId}
-                                        onClick={() => void tryResolve(item)}
-                                        style={{ marginTop: '.35rem' }}
-                                    >
-                                        {translateUiText('Tentar detectar Mod ID')}
-                                    </Button>
-                                    <Input
-                                        aria-label={translateUiText('Mod IDs para ') + item.name}
-                                        value={manual[item.workshopId] || ''}
-                                        onChange={(event) =>
-                                            setManual((current) => ({ ...current, [item.workshopId]: event.currentTarget.value }))
-                                        }
-                                        placeholder={translateUiText('Mod IDs exatos, separados por ;')}
-                                        style={{ width: '100%', marginTop: '.35rem' }}
-                                    />
+                                        <Button
+                                            type='button'
+                                            isSecondary
+                                            size='xsmall'
+                                            disabled={!!resolving}
+                                            isLoading={resolving === item.workshopId}
+                                            onClick={() => void tryResolve(item)}
+                                            style={{ marginTop: '.35rem' }}
+                                        >
+                                            {translateUiText('Tentar detectar Mod ID')}
+                                        </Button>
+                                        <Input
+                                            aria-label={translateUiText('Mod IDs para ') + item.name}
+                                            value={manual[item.workshopId] || ''}
+                                            onChange={(event) =>
+                                                setManual((current) => ({
+                                                    ...current,
+                                                    [item.workshopId]: event.currentTarget.value,
+                                                }))
+                                            }
+                                            placeholder={translateUiText('Mod IDs exatos, separados por ;')}
+                                            style={{ width: '100%', marginTop: '.35rem' }}
+                                        />
                                     </>
                                 )}
                             </div>
                         ))}
                     </div>
-                    <Button
-                        type='button'
-                        disabled={!toAdd.length}
-                        onClick={apply}
-                        style={{ marginTop: '.75rem' }}
-                    >
+                    <Button type='button' disabled={!toAdd.length} onClick={apply} style={{ marginTop: '.75rem' }}>
                         {translateUiText('Adicionar {{count}} mods à configuração pendente', { count: toAdd.length })}
                     </Button>
                     <p style={{ color: 'var(--hts-ink-muted)', fontSize: '.72rem', marginTop: '.45rem' }}>
-                        {translateUiText('Nenhum arquivo do servidor é alterado até clicar em Salvar ou Salvar e Reiniciar.')}
+                        {translateUiText(
+                            'Nenhum arquivo do servidor é alterado até clicar em Salvar ou Salvar e Reiniciar.'
+                        )}
                     </p>
                 </div>
             )}
