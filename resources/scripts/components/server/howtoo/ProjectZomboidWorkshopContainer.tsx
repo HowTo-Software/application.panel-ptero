@@ -24,8 +24,13 @@ import {
     addWorkshopSelection,
     appendWorkshopResults,
     hasWorkshopChanges,
+    parseManualModIds,
+    placeholderWorkshopItem,
     removeWorkshopSelection,
+    toggleWorkshopModId,
     uniqueWorkshopValues,
+    withManualModIds,
+    workshopModIdReasonText,
 } from './workshopSelection';
 import {
     Heading,
@@ -201,7 +206,52 @@ const AddedCount = styled.span`
     font-size: 0.66rem;
 `;
 
-const manualModIds = (value: string) => uniqueWorkshopValues(value.split(';')).filter((id) => id.length <= 128);
+const WarningText = styled.p`
+    margin: 0.65rem 0;
+    color: #fbbf24;
+    font-size: 0.8rem;
+`;
+const ItemModIds = styled.span`
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+`;
+const ModIdChip = styled.button<{ $active: boolean }>`
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid ${({ $active }) => ($active ? '#4ade80' : 'var(--hts-border)')};
+    border-radius: 99px;
+    background: ${({ $active }) => ($active ? 'rgba(74, 222, 128, 0.12)' : 'transparent')};
+    padding: 0.1rem 0.45rem;
+    color: ${({ $active }) => ($active ? '#bbf7d0' : 'var(--hts-ink-muted)')} !important;
+    font-size: 0.64rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    &:disabled {
+        cursor: default;
+    }
+`;
+const ItemManualInput = styled.span`
+    display: flex !important;
+    gap: 0.25rem;
+    margin-top: 0.35rem;
+    input {
+        min-width: 0;
+        flex: 1;
+        border: 1px solid var(--hts-border);
+        border-radius: 0.3rem;
+        background: var(--hts-surface);
+        padding: 0.2rem 0.4rem;
+        color: var(--hts-ink);
+        font-size: 0.68rem;
+    }
+`;
+
+/** Polls while the panel reads the item's mod.info files; ~1 minute before giving up. */
+const MAX_RESOLVE_POLLS = 12;
+const RESOLVE_POLL_INTERVAL_MS = 5000;
 
 export default () => {
     const server = ServerContext.useStoreState((state) => state.server.data!);
@@ -223,6 +273,10 @@ export default () => {
     const [importedCollectionDetails, setImportedCollectionDetails] = useState<WorkshopItem[]>([]);
     const [manualMod, setManualMod] = useState('');
     const [showManualEditor, setShowManualEditor] = useState(false);
+    // Mod IDs typed for Workshop items the panel could not resolve, keyed by Workshop ID.
+    const [manualItemModIds, setManualItemModIds] = useState<Record<string, string[]>>({});
+    const [manualItemDrafts, setManualItemDrafts] = useState<Record<string, string>>({});
+    const [warning, setWarning] = useState('');
     const [detailItem, setDetailItem] = useState<WorkshopItem | null>(null);
     const [loading, setLoading] = useState(true);
     const [searching, setSearching] = useState(false);
@@ -245,9 +299,21 @@ export default () => {
             ...results,
             ...importedCollectionDetails,
             ...Array.from(selectedCandidates.values()),
-        ].forEach((item) => map.set(item.workshopId, item));
+        ].forEach((item) => {
+            // A later source without Mod IDs (e.g. a catalog card) must not hide ids already known.
+            const known = map.get(item.workshopId);
+            map.set(
+                item.workshopId,
+                !item.modIds.length && known?.modIds.length
+                    ? { ...item, modIds: known.modIds, modIdSource: known.modIdSource }
+                    : item
+            );
+        });
+        Object.entries(manualItemModIds).forEach(([id, ids]) =>
+            map.set(id, withManualModIds(map.get(id) || placeholderWorkshopItem(id), ids))
+        );
         return map;
-    }, [configuration?.details, results, importedCollectionDetails, selectedCandidates]);
+    }, [configuration?.details, results, importedCollectionDetails, selectedCandidates, manualItemModIds]);
     const changed = hasWorkshopChanges(configuration, workshopItems, mods);
 
     const loadCatalog = useCallback(
@@ -372,22 +438,37 @@ export default () => {
         const { signal } = controller;
         setResolving(item.workshopId);
         setError('');
+        setWarning('');
         try {
             let resolved = await resolveWorkshopItem(server.uuid, item.workshopId, signal);
-            while (resolved.modIdPending && !signal.aborted) {
-                await new Promise<void>((done) => window.setTimeout(done, 6000));
+            for (let attempt = 0; resolved.modIdPending && attempt < MAX_RESOLVE_POLLS; attempt++) {
+                await new Promise<void>((done) => window.setTimeout(done, RESOLVE_POLL_INTERVAL_MS));
                 if (signal.aborted) return;
                 resolved = await resolveWorkshopItem(server.uuid, item.workshopId, signal);
             }
             if (signal.aborted) return;
-            if (!resolved.modIds.length) {
-                setError(translateUiText('{{name}}: não foi possível detectar os Mod IDs.', { name: item.name }));
-                return;
-            }
+            const merged = { ...item, ...resolved };
             setResults((current) =>
-                current.map((entry) => (entry.workshopId === resolved.workshopId ? { ...entry, ...resolved } : entry))
+                current.map((entry) => (entry.workshopId === merged.workshopId ? { ...entry, ...merged } : entry))
             );
-            setSelectedCandidates((current) => new Map(current).set(resolved.workshopId, resolved));
+            // Items without a detected Mod ID are still selectable: WorkshopItems alone makes the
+            // server download them, and the ids can be typed now or read from mod.info later.
+            setSelectedCandidates((current) => new Map(current).set(merged.workshopId, merged));
+            if (!merged.modIds.length) {
+                setWarning(
+                    translateUiText(
+                        '{{name}}: Mod ID não detectado ({{reason}}). O item foi selecionado mesmo assim; depois de adicioná-lo, informe o Mod ID na lista lateral ou salve e inicie o servidor para o painel ler o mod.info baixado.',
+                        {
+                            name: item.name,
+                            reason: translateUiText(
+                                merged.modIdPending
+                                    ? 'a leitura dos arquivos ainda não terminou'
+                                    : workshopModIdReasonText(merged.modIdReason)
+                            ),
+                        }
+                    )
+                );
+            }
         } catch (cause) {
             if (!signal.aborted) setError(httpErrorToHuman(cause));
         } finally {
@@ -416,10 +497,21 @@ export default () => {
     };
 
     const addManualMod = () => {
-        const values = manualModIds(manualMod);
+        const values = parseManualModIds(manualMod);
         if (!values.length) return;
         setMods((current) => uniqueWorkshopValues([...current, ...values]));
         setManualMod('');
+    };
+
+    const addManualItemModIds = (workshopId: string) => {
+        const values = parseManualModIds(manualItemDrafts[workshopId] || '');
+        if (!values.length) return;
+        setManualItemModIds((current) => ({
+            ...current,
+            [workshopId]: uniqueWorkshopValues([...(current[workshopId] || []), ...values]),
+        }));
+        setMods((current) => uniqueWorkshopValues([...current, ...values]));
+        setManualItemDrafts((current) => ({ ...current, [workshopId]: '' }));
     };
 
     const save = async (restart: boolean) => {
@@ -427,6 +519,7 @@ export default () => {
         setSaving(true);
         setError('');
         setNotice('');
+        setWarning('');
         try {
             const result = await saveWorkshop(
                 server.uuid,
@@ -451,6 +544,14 @@ export default () => {
                 result.restartError ||
                     (result.restarted ? 'Configuração salva; reinício solicitado.' : 'Configuração salva no servidor.')
             );
+            if (result.unresolvedWorkshopItems.length) {
+                setWarning(
+                    translateUiText(
+                        '{{count}} item(ns) foram salvos sem Mod ID. Inicie ou reinicie o servidor para ele baixar os mods e recarregue esta página: os Mod IDs lidos do mod.info aparecem na lista lateral para ativar.',
+                        { count: result.unresolvedWorkshopItems.length }
+                    )
+                );
+            }
         } catch (requestError) {
             setError(httpErrorToHuman(requestError));
         } finally {
@@ -462,24 +563,7 @@ export default () => {
 
     const visibleItems =
         catalogMode === 'installed'
-            ? (configuration?.workshopItems || []).map(
-                  (id) =>
-                      details.get(id) || {
-                          workshopId: id,
-                          name: `Workshop item ${id}`,
-                          image: null,
-                          description: '',
-                          modIds: [],
-                          modIdSource: null,
-                          tags: [],
-                          score: null,
-                          votesUp: null,
-                          votesDown: null,
-                          subscriptions: null,
-                          creatorId: null,
-                          updatedAt: null,
-                      }
-              )
+            ? (configuration?.workshopItems || []).map((id) => details.get(id) || placeholderWorkshopItem(id))
             : results;
     const status = changed ? 'Alterações pendentes' : 'Configuração sincronizada';
 
@@ -554,6 +638,7 @@ export default () => {
                         {notice && (
                             <Muted style={{ marginTop: '.65rem', color: '#86efac' }}>{translateUiText(notice)}</Muted>
                         )}
+                        {warning && <WarningText role='status'>{warning}</WarningText>}
                         {error && <ErrorText role='alert'>{error}</ErrorText>}
                         <Heading style={{ marginTop: '1rem' }}>
                             <div>
@@ -667,6 +752,75 @@ export default () => {
                                             <small>
                                                 {translateUiText('Workshop ID:')} {id}
                                             </small>
+                                            {item?.modIds.length ? (
+                                                <ItemModIds>
+                                                    {item.modIds.map((modId) => {
+                                                        const active = mods.includes(modId);
+                                                        return (
+                                                            <Can
+                                                                key={modId}
+                                                                action='integration.workshop-update'
+                                                                renderOnError={
+                                                                    <ModIdChip type='button' $active={active} disabled>
+                                                                        {modId}
+                                                                    </ModIdChip>
+                                                                }
+                                                            >
+                                                                <ModIdChip
+                                                                    type='button'
+                                                                    $active={active}
+                                                                    disabled={saving}
+                                                                    aria-pressed={active}
+                                                                    title={translateUiText(
+                                                                        active
+                                                                            ? 'Ativo no servidor. Clique para desativar.'
+                                                                            : 'Inativo. Clique para ativar no servidor.'
+                                                                    )}
+                                                                    onClick={() =>
+                                                                        setMods((current) =>
+                                                                            toggleWorkshopModId(current, modId)
+                                                                        )
+                                                                    }
+                                                                >
+                                                                    {active ? '✓ ' : '+ '}
+                                                                    {modId}
+                                                                </ModIdChip>
+                                                            </Can>
+                                                        );
+                                                    })}
+                                                </ItemModIds>
+                                            ) : (
+                                                <Can action='integration.workshop-update'>
+                                                    <ItemManualInput>
+                                                        <input
+                                                            aria-label={translateUiText('Mod ID do item {{id}}', {
+                                                                id,
+                                                            })}
+                                                            placeholder={translateUiText(
+                                                                'Mod ID não detectado — digite aqui'
+                                                            )}
+                                                            value={manualItemDrafts[id] || ''}
+                                                            onChange={(event) => {
+                                                                const value = event.currentTarget.value;
+                                                                setManualItemDrafts((current) => ({
+                                                                    ...current,
+                                                                    [id]: value,
+                                                                }));
+                                                            }}
+                                                            onKeyDown={(event) => {
+                                                                if (event.key === 'Enter') addManualItemModIds(id);
+                                                            }}
+                                                        />
+                                                        <button
+                                                            type='button'
+                                                            disabled={saving || !manualItemDrafts[id]?.trim()}
+                                                            onClick={() => addManualItemModIds(id)}
+                                                        >
+                                                            {translateUiText('Ativar')}
+                                                        </button>
+                                                    </ItemManualInput>
+                                                </Can>
+                                            )}
                                         </div>
                                         <Can action='integration.workshop-update'>
                                             <button

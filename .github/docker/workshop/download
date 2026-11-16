@@ -1,6 +1,17 @@
 #!/bin/sh
+# Usage: hts-workshop-download <ugc manifest id> <output dir>
+# Downloads only the mod.info files of a Project Zomboid Workshop item (anonymous login).
 set -eu
 ulimit -f 65536
+
+# DepotDownloader stores account.config in IsolatedStorage under $HOME/.local/share.
+# Fall back to a private directory when the inherited HOME is not writable.
+if [ -z "${HOME:-}" ] || [ ! -w "${HOME}" ]; then
+    HOME="$2/.home"
+    mkdir -p "$HOME"
+fi
+export HOME
+export DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 
 exec /usr/share/dotnet/dotnet /opt/workshop/DepotDownloader.dll \
     -app 108600 -ugc "$1" -dir "$2" -filelist /opt/workshop/mod-info-files.txt

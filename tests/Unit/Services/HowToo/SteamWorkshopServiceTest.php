@@ -212,6 +212,27 @@ class SteamWorkshopServiceTest extends TestCase
         $this->assertSame(108600, $item['consumer_app_id']);
     }
 
+    public function testQueryFilesFieldNamesAreUnderstood(): void
+    {
+        $resolver = new ProjectZomboidModIdResolver(
+            \Mockery::mock(\Pterodactyl\Repositories\Wings\DaemonFileRepository::class),
+            \Mockery::mock(\Illuminate\Contracts\Cache\Repository::class),
+        );
+        $this->reflection->getProperty('modIds')->setValue($this->service, $resolver);
+
+        // IPublishedFileService/QueryFiles uses file_description, kvtags and consumer_appid.
+        $item = $this->invoke('transform', [[
+            'publishedfileid' => '3781883471',
+            'consumer_appid' => 108600,
+            'file_description' => "Workshop ID: 3781883471\r\nMod ID: FruityFarmer",
+            'kvtags' => [['key' => 'modid', 'value' => 'FromTag']],
+        ]]);
+
+        $this->assertSame(108600, $item['consumer_app_id']);
+        $this->assertSame(['FromTag', 'FruityFarmer'], $item['mod_ids']);
+        $this->assertStringContainsString('Mod ID: FruityFarmer', $item['description']);
+    }
+
     private function invoke(string $method, array $arguments): mixed
     {
         $reflection = $this->reflection->getMethod($method);

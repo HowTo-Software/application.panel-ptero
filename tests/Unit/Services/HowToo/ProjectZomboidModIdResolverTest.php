@@ -76,6 +76,53 @@ class ProjectZomboidModIdResolverTest extends TestCase
         $this->assertSame([], $this->resolver->fromDescription('CommonSense is a quality-of-life mod.'));
     }
 
+    public function testRealWorkshopDescriptionFormatsAreParsed(): void
+    {
+        // Shapes copied from live Project Zomboid Workshop pages.
+        $this->assertSame(
+            ['87fordB700'],
+            $this->resolver->fromDescription("87fordF700bank, 87fordF700box\r\n\r\nWorkshop ID: 3110911330\r\nMod ID: 87fordB700"),
+        );
+        $this->assertSame(
+            ['ZVirusVaccine42BETA', 'ResearchLabInternProfession'],
+            $this->resolver->fromDescription("[hr][/hr]\r\n\u{1F194} Workshop ID: 3615135168\r\n\u{1F194} Mod ID: ZVirusVaccine42BETA\r\n\u{1F194} Mod ID: ResearchLabInternProfession"),
+        );
+    }
+
+    public function testDescriptionLabelsAcceptQualifiersHeadingsAndSeparators(): void
+    {
+        $this->assertSame(['Alpha', 'Beta'], $this->resolver->fromDescription("[h2]Mod ID[/h2]\nAlpha\nBeta\n\nOther text"));
+        $this->assertSame(['Alpha'], $this->resolver->fromDescription("Mod ID:\r\nAlpha\r\nWorkshop ID: 123"));
+        $this->assertSame(
+            ['Alpha42', 'Alpha41', 'Gamma'],
+            $this->resolver->fromDescription("Mod ID (B42): Alpha42\nMod ID [B41]: Alpha41\nMod ID for B42: Gamma"),
+        );
+        $this->assertSame(['Alpha'], $this->resolver->fromDescription('Mod ID: Alpha / Workshop ID: 123'));
+        $this->assertSame(['Alpha', 'Beta', 'Gamma', 'Delta'], $this->resolver->fromDescription('Mod IDs: Alpha; Beta, Gamma | Delta'));
+        $this->assertSame(['Alpha'], $this->resolver->fromDescription('Mod ID: Alpha (B42 only)'));
+        $this->assertSame(['TableMod'], $this->resolver->fromDescription('[table][tr][td]Mod ID[/td][td]TableMod[/td][/tr][/table]'));
+        $this->assertSame(["'87Trucks"], $this->resolver->fromDescription("Mod ID: '87Trucks"));
+    }
+
+    public function testInlineDependencyMentionsOnlyApplyWithoutALineLabel(): void
+    {
+        $this->assertSame(['RealMod'], $this->resolver->fromDescription("Requires Tsar Lib (Mod ID: tsarslib)\nMod ID: RealMod"));
+        $this->assertSame(['tsarslib'], $this->resolver->fromDescription('Requires Tsar Lib (Mod ID: tsarslib)'));
+    }
+
+    public function testDescriptionRejectsProseAndLinks(): void
+    {
+        $this->assertSame(['Real'], $this->resolver->fromDescription("Mod IDs are case-sensitive: copy them exactly\nMod ID: Real"));
+        $this->assertSame([], $this->resolver->fromDescription('Mod ID: https://steamcommunity.com/sharedfiles/filedetails/?id=1'));
+        $this->assertSame([], $this->resolver->fromDescription('Modified: today'));
+    }
+
+    public function testModInfoWithCrlfAndUtf16IsRead(): void
+    {
+        $this->assertSame(['Animalsdonotattackbuildings'], $this->resolver->parseModInfo("name=X\r\nid=Animalsdonotattackbuildings \r\nicon=icon.png\r\n"));
+        $this->assertSame(['Utf16Mod'], $this->resolver->parseModInfo("\xFF\xFE" . mb_convert_encoding("id=Utf16Mod\r\n", 'UTF-16LE', 'UTF-8')));
+    }
+
     public function testItFindsEveryModInfoInsideAnInstalledWorkshopItem(): void
     {
         $server = \Mockery::mock(Server::class)->makePartial();
@@ -84,9 +131,9 @@ class ProjectZomboidModIdResolverTest extends TestCase
         $cache = \Mockery::mock(CacheRepository::class);
         $root = '/.cache/Steam/steamapps/workshop/content/108600';
 
-        $cache->shouldReceive('get')->once()->with('howtoo:pz-mod-ids:server-uuid:123')->andReturnNull();
+        $cache->shouldReceive('get')->once()->with('howtoo:pz-mod-ids:v2:server-uuid:123')->andReturnNull();
         $cache->shouldReceive('put')->once()->with(
-            'howtoo:pz-mod-ids:server-uuid:123',
+            'howtoo:pz-mod-ids:v2:server-uuid:123',
             ['CommonSense', 'CommonSenseFix'],
             \Mockery::type(\DateTimeInterface::class),
         );

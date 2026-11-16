@@ -102,7 +102,7 @@ final class SteamWorkshopService
     private function detailsBatch(array $ids): array
     {
 
-        $cacheKey = 'howtoo:steam:details:v2:' . sha1(implode(',', $ids));
+        $cacheKey = 'howtoo:steam:details:v3:' . sha1(implode(',', $ids));
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($ids): array {
             $payload = ['itemcount' => count($ids)];
@@ -156,7 +156,7 @@ final class SteamWorkshopService
             throw new DisplayException('Only Project Zomboid Workshop collections can be imported.');
         }
 
-        $cacheKey = 'howtoo:steam:collection:v3:' . $collectionId;
+        $cacheKey = 'howtoo:steam:collection:v4:' . $collectionId;
 
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($collectionId, $collection): array {
             try {
@@ -262,9 +262,17 @@ final class SteamWorkshopService
         return $key;
     }
 
+    /**
+     * Normalize an item from ISteamRemoteStorage/GetPublishedFileDetails (description,
+     * consumer_app_id) or IPublishedFileService/QueryFiles (file_description, kvtags,
+     * consumer_appid) into one shape.
+     */
     private function transform(array $item): array
     {
-        $description = $this->plainText((string) ($item['description'] ?? $item['short_description'] ?? ''));
+        $rawDescription = (string) ($item['description'] ?? $item['file_description'] ?? $item['short_description'] ?? '');
+        $item['raw_description'] = $rawDescription;
+        $item['kv_tags'] = $item['kv_tags'] ?? $item['kvtags'] ?? [];
+        $description = $this->plainText($rawDescription);
 
         $tags = collect($item['tags'] ?? [])
             ->map(fn ($tag): string => is_array($tag) ? trim((string) ($tag['tag'] ?? '')) : trim((string) $tag))
@@ -278,7 +286,8 @@ final class SteamWorkshopService
             'workshop_id' => (string) ($item['publishedfileid'] ?? ''),
             // Internal-only Steam fields used to reject other games/collections.
             'file_type' => (int) ($item['file_type'] ?? 0),
-            'consumer_app_id' => (int) ($item['consumer_app_id'] ?? $item['creator_app_id'] ?? 0),
+            'consumer_app_id' => (int) ($item['consumer_app_id'] ?? $item['consumer_appid']
+                ?? $item['creator_app_id'] ?? $item['creator_appid'] ?? 0),
             'name' => mb_substr(trim((string) ($item['title'] ?? 'Untitled mod')), 0, 180),
             'image' => filter_var($item['preview_url'] ?? null, FILTER_VALIDATE_URL) ?: null,
             'description' => mb_substr($description, 0, 12000),
@@ -289,8 +298,8 @@ final class SteamWorkshopService
             'subscriptions' => isset($item['subscriptions']) ? (int) $item['subscriptions'] : null,
             'creator_id' => isset($item['creator']) ? (string) $item['creator'] : null,
             'metadata' => $item['metadata'] ?? null,
-            'kv_tags' => $item['kv_tags'] ?? [],
-            'raw_description' => (string) ($item['description'] ?? ''),
+            'kv_tags' => $item['kv_tags'],
+            'raw_description' => $rawDescription,
             'content_manifest' => (string) ($item['hcontent_file'] ?? ''),
             'content_url' => filter_var($item['file_url'] ?? null, FILTER_VALIDATE_URL) ?: null,
             'content_size' => isset($item['file_size']) ? (int) $item['file_size'] : null,
@@ -328,7 +337,7 @@ final class SteamWorkshopService
     ): array {
         $key = $this->requireCredential();
         $cacheKey = sprintf(
-            'howtoo:steam:query:%s:%d:%d:%s',
+            'howtoo:steam:query:v2:%s:%d:%d:%s',
             $cacheFragment,
             $page,
             $perPage,

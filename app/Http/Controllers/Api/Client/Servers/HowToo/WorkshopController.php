@@ -125,7 +125,7 @@ class WorkshopController extends ClientApiController
     {
         $current = $this->config->read($server);
         $workshopItems = $request->input('workshop_items');
-        $mods = $this->resolvedMods(
+        [$mods, $unresolved] = $this->resolvedMods(
             $server,
             $workshopItems,
             $request->input('mods'),
@@ -159,6 +159,7 @@ class WorkshopController extends ClientApiController
         return new JsonResponse(array_merge($configuration, [
             'restarted' => $restarted,
             'restart_error' => $restartError,
+            'unresolved_workshop_items' => array_values(array_intersect($unresolved, $configuration['workshop_items'])),
         ]));
     }
 
@@ -172,6 +173,7 @@ class WorkshopController extends ClientApiController
             'mod_ids',
             'mod_id_source',
             'mod_id_pending',
+            'mod_id_reason',
             'tags',
             'score',
             'votes_up',
@@ -182,6 +184,16 @@ class WorkshopController extends ClientApiController
         ])->all();
     }
 
+    /**
+     * The submitted Mods list is the user's decision and is saved as-is, so a Mod ID
+     * removed on purpose (an optional sub-mod, a B41 variant) is never put back.
+     * Only Workshop items added in this save whose Mod IDs the browser did not know
+     * yet are resolved here. An item that still cannot be resolved is saved anyway:
+     * the game server downloads it on the next start, and the panel then reads the
+     * ids from the installed mod.info files.
+     *
+     * @return array{0: string[], 1: string[]} the Mods list and the unresolved new Workshop IDs
+     */
     private function resolvedMods(
         Server $server,
         array $workshopItems,
@@ -189,47 +201,41 @@ class WorkshopController extends ClientApiController
         array $workshopMods,
         array $current,
     ): array {
-        if ($workshopItems === []) {
-            return $submittedMods;
+        $unknown = array_values(array_filter(
+            array_diff($workshopItems, $current['workshop_items']),
+            fn (string $workshopId): bool => ($workshopMods[$workshopId] ?? []) === [],
+        ));
+        if ($unknown === []) {
+            return [$submittedMods, []];
         }
 
         $details = collect();
         try {
-            $details = collect($this->steam->details($workshopItems))->keyBy('workshop_id');
+            $details = collect($this->steam->details($unknown))->keyBy('workshop_id');
         } catch (DisplayException) {
             // Installed mod.info files remain available when the Steam request fails.
         }
-        $installed = $this->modIds->resolveInstalled($server, $workshopItems);
-        $required = [];
-        $unresolvedAdded = [];
-        $added = array_diff($workshopItems, $current['workshop_items']);
+        $installed = $this->modIds->resolveInstalled($server, $unknown);
+        $resolved = [];
+        $unresolved = [];
 
-        foreach ($workshopItems as $workshopId) {
-            $isNew = in_array($workshopId, $added, true);
+        foreach ($unknown as $workshopId) {
             $modIds = $installed[$workshopId] ?? [];
             $item = $details->get($workshopId);
             if ($modIds === [] && is_array($item) && $this->steam->isProjectZomboidItem($item)) {
-                $modIds = $this->modIds->resolveItem($item, queue: $isNew)['mod_ids'];
+                $modIds = $this->modIds->resolveItem($item)['mod_ids'];
             }
             if ($modIds === []) {
-                if ($isNew) {
-                    $unresolvedAdded[] = $workshopId;
-                } else {
-                    $modIds = $workshopMods[$workshopId] ?? [];
-                }
+                $unresolved[] = $workshopId;
             }
-            $required = array_merge($required, $modIds);
+            $resolved = array_merge($resolved, $modIds);
         }
 
-        if ($unresolvedAdded !== []) {
-            throw new DisplayException('Workshop Mod IDs are still being resolved or are unavailable. Try again in a moment.');
-        }
-
-        $mods = array_values(array_unique(array_merge($submittedMods, $required)));
+        $mods = array_values(array_unique(array_merge($submittedMods, $resolved)));
         if (count($mods) > 500) {
             throw new DisplayException('The Workshop configuration exceeds the limit of 500 Mod IDs.');
         }
 
-        return $mods;
+        return [$mods, $unresolved];
     }
 }
