@@ -239,7 +239,6 @@ describe('saveWorkshop', () => {
     });
 });
 
-
 describe('getWorkshopCollection', () => {
     beforeEach(() => {
         jest.mocked(http.get).mockReset();
