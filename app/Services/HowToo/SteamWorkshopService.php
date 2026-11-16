@@ -149,14 +149,14 @@ final class SteamWorkshopService
         }
 
         $collection = $this->details([$collectionId])[0] ?? null;
-        if (!$collection || $collection['workshop_id'] !== $collectionId || $collection['file_type'] !== 2) {
+        if (!$collection || $collection['workshop_id'] !== $collectionId) {
             throw new DisplayException('This Workshop link does not point to a public collection.');
         }
         if ($collection['consumer_app_id'] !== self::PROJECT_ZOMBOID_APP_ID) {
             throw new DisplayException('Only Project Zomboid Workshop collections can be imported.');
         }
 
-        $cacheKey = 'howtoo:steam:collection:v2:' . $collectionId;
+        $cacheKey = 'howtoo:steam:collection:v3:' . $collectionId;
 
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($collectionId, $collection): array {
             try {
@@ -178,9 +178,16 @@ final class SteamWorkshopService
             if (!is_array($payload)) {
                 throw new DisplayException('Steam returned an invalid collection response.');
             }
-            $ids = $this->collectionChildren($payload, $collectionId);
+            // GetPublishedFileDetails omits file_type. A successful collection
+            // response, not that optional metadata field, confirms the type.
+            $children = $this->collectionChildren($payload, $collectionId);
+            $ids = array_column($children, 'workshop_id');
+            $modIds = array_column(array_filter(
+                $children,
+                fn (array $child): bool => $child['file_type'] !== 2,
+            ), 'workshop_id');
             $resolved = [];
-            foreach ($this->details($ids) as $item) {
+            foreach ($this->details($modIds) as $item) {
                 if ($this->isProjectZomboidItem($item)) {
                     $resolved[$item['workshop_id']] = $item;
                 }
@@ -211,7 +218,7 @@ final class SteamWorkshopService
         return $item['consumer_app_id'] === self::PROJECT_ZOMBOID_APP_ID && $item['file_type'] !== 2;
     }
 
-    /** @return string[] */
+    /** @return array<int, array{workshop_id: string, file_type: int}> */
     private function collectionChildren(array $payload, string $collectionId): array
     {
         $records = data_get($payload, 'response.collectiondetails');
@@ -235,9 +242,12 @@ final class SteamWorkshopService
         return collect($children)
             ->filter(fn ($child): bool => is_array($child)
                 && preg_match('/^\d{1,20}$/', (string) ($child['publishedfileid'] ?? '')) === 1)
-            ->pluck('publishedfileid')
-            ->map(fn ($id): string => (string) $id)
-            ->unique()
+            ->map(fn (array $child): array => [
+                'workshop_id' => (string) $child['publishedfileid'],
+                // This endpoint supplies filetype, unlike published file details.
+                'file_type' => (int) ($child['filetype'] ?? 0),
+            ])
+            ->unique('workshop_id')
             ->values()
             ->all();
     }
