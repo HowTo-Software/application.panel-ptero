@@ -3,6 +3,8 @@
 namespace Pterodactyl\Http\Controllers\Auth;
 
 use Illuminate\Support\Str;
+use Pterodactyl\Models\User;
+use Pterodactyl\Services\Users\LocalAuthentication;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Contracts\Hashing\Hasher;
 use Illuminate\Support\Facades\Password;
@@ -43,6 +45,12 @@ class ResetPasswordController extends Controller
      */
     public function __invoke(ResetPasswordRequest $request): JsonResponse
     {
+        abort_unless(LocalAuthentication::enabled(), 404);
+        $candidate = User::query()->where('email', $request->input('email'))->first();
+        if (!$candidate || !LocalAuthentication::allows($candidate)) {
+            throw new DisplayException(trans(Password::INVALID_TOKEN));
+        }
+
         // Here we will attempt to reset the user's password. If it is successful we
         // will update the password on an actual user model and persist it to the
         // database. Otherwise, we will parse the error and return the response.
@@ -76,6 +84,10 @@ class ResetPasswordController extends Controller
      */
     protected function resetPassword($user, $password)
     {
+        if (!LocalAuthentication::allows($user)) {
+            throw new DisplayException(trans(Password::INVALID_TOKEN));
+        }
+
         $user = $this->userRepository->update($user->id, [
             'password' => $this->hasher->make($password),
             $user->getRememberTokenName() => Str::random(60),

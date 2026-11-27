@@ -3,6 +3,7 @@
 namespace Pterodactyl\Notifications;
 
 use Pterodactyl\Models\User;
+use Pterodactyl\Services\Users\LocalAuthentication;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -38,18 +39,22 @@ class AccountCreated extends Notification implements ShouldQueue
             ->line('Username: ' . $this->user->username)
             ->line('Email: ' . $this->user->email);
 
-        $authentik = config('services.authentik');
-        if (!empty($authentik['client_id']) && !empty($authentik['client_secret']) && !empty($authentik['base_url'])) {
-            // never reads, and linking to Authentik instead would be worse: the
-            // directory account does not exist until provisioning has run.
-            return $message->line(
-                'You sign in with the Single Sign-On button - there is no separate password for this panel. '
-                . 'Your sign-in details are set up separately and you will be contacted once your account is ready.'
-            );
+        if (LocalAuthentication::allows($this->user)) {
+            if (!is_null($this->token)) {
+                return $message
+                    ->line('Use the legacy login option to access the panel with your local password.')
+                    ->action('Setup Your Account', url('/auth/password/reset/' . $this->token . '?email=' . urlencode($this->user->email)));
+            }
+
+            return $message
+                ->line('Use the legacy login option and the password provided separately by your administrator.')
+                ->action('Sign In', url('/auth/login/legacy'));
         }
 
-        if (!is_null($this->token)) {
-            return $message->action('Setup Your Account', url('/auth/password/reset/' . $this->token . '?email=' . urlencode($this->user->email)));
+        if (LocalAuthentication::ssoEnabled()) {
+            return $message->line(
+                'Sign in with the Single Sign-On button. Your sign-in details are set up separately.'
+            );
         }
 
         return $message;

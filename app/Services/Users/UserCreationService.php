@@ -47,7 +47,7 @@ class UserCreationService
             'uuid' => Uuid::uuid4()->toString(),
         ]), true, true);
 
-        if (isset($generateResetToken)) {
+        if (isset($generateResetToken) && LocalAuthentication::allows($user)) {
             $token = $this->passwordBroker->createToken($user);
         }
 

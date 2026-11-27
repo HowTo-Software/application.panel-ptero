@@ -3,6 +3,7 @@
 namespace Pterodactyl\Http\ViewComposers;
 
 use Illuminate\View\View;
+use Pterodactyl\Services\Users\LocalAuthentication;
 use Illuminate\Support\ViewErrorBag;
 use Pterodactyl\Services\Helpers\AssetHashService;
 
@@ -32,6 +33,7 @@ class AssetComposer
                 'enabled' => config('recaptcha.enabled', false),
                 'siteKey' => config('recaptcha.website_key') ?? '',
             ],
+            'localAuthEnabled' => LocalAuthentication::enabled(),
             'sso' => [
                 'enabled' => $ssoEnabled,
                 // Passwords live in Active Directory, so recovery is Authentik's flow, not ours.
