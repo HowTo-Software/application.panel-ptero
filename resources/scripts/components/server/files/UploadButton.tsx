@@ -1,6 +1,4 @@
 import { translateUiText } from '@/i18n/uiTranslations';
-import axios, { AxiosProgressEvent } from 'axios';
-import getFileUploadUrl from '@/api/server/files/getFileUploadUrl';
 import tw from 'twin.macro';
 import { Button } from '@/components/elements/button/index';
 import React, { useEffect, useRef } from 'react';
@@ -14,6 +12,9 @@ import { WithClassname } from '@/components/types';
 import Portal from '@/components/elements/Portal';
 import { CloudUploadIcon } from '@heroicons/react/outline';
 import { useSignal } from '@preact/signals-react';
+import { usePermissions } from '@/plugins/usePermissions';
+import { uploadFile } from '@/components/server/files/upload/uploadEngine';
+import { MAX_PARALLEL_UPLOADS, runPool } from '@/components/server/files/upload/queue';
 
 function isFileOrDirectory(event: DragEvent): boolean {
     if (!event.dataTransfer?.types) {
@@ -30,13 +31,18 @@ export default ({ className }: WithClassname) => {
     const timeouts = useSignal<NodeJS.Timeout[]>([]);
 
     const { mutate } = useFileManagerSwr();
-    const { addError, clearAndAddHttpError } = useFlashKey('files');
+    const { addError, clearFlashes } = useFlashKey('files');
+    // Uploading under a temporary name and renaming on success needs update (rename) permission. Without it
+    // the legacy direct upload is used, which keeps working for users that only have file.create.
+    const [canUpdate, canDelete] = usePermissions(['file.update', 'file.delete']);
 
     const uuid = ServerContext.useStoreState((state) => state.server.data!.uuid);
     const directory = ServerContext.useStoreState((state) => state.files.directory);
-    const { clearFileUploads, removeFileUpload, pushFileUpload, setUploadProgress } = ServerContext.useStoreActions(
+    const { removeFileUpload, pushFileUpload, updateFileUpload } = ServerContext.useStoreActions(
         (actions) => actions.files
     );
+    const store = ServerContext.useStore();
+    const hasFailed = (name: string) => store.getState().files.uploads[name]?.status === 'error';
 
     useEventListener(
         'dragenter',
@@ -58,47 +64,64 @@ export default ({ className }: WithClassname) => {
         return () => timeouts.value.forEach(clearTimeout);
     }, []);
 
-    const onUploadProgress = (data: AxiosProgressEvent, name: string) => {
-        setUploadProgress({ name, loaded: data.loaded });
-    };
-
     const onFileSubmission = (files: FileList) => {
-        clearAndAddHttpError();
+        clearFlashes();
         const list = Array.from(files);
         if (list.some((file) => !file.type && (!file.size || file.size === 4096))) {
             return addError(translateUiText('Folder uploads are not supported.'), translateUiText('Error'));
         }
 
-        const uploads = list.map((file) => {
+        // The directory is captured now so navigating elsewhere while files are queued does not change
+        // where they end up.
+        const target = directory;
+        const jobs = list.map((file) => {
             const controller = new AbortController();
             pushFileUpload({
                 name: file.name,
-                data: { abort: controller, loaded: 0, total: file.size },
+                data: { abort: controller, loaded: 0, total: file.size, status: 'queued', speed: 0, eta: null },
             });
 
-            return () =>
-                getFileUploadUrl(uuid).then((url) =>
-                    axios
-                        .post(
-                            url,
-                            { files: file },
-                            {
-                                signal: controller.signal,
-                                headers: { 'Content-Type': 'multipart/form-data' },
-                                params: { directory },
-                                onUploadProgress: (data) => onUploadProgress(data, file.name),
-                            }
-                        )
-                        .then(() => timeouts.value.push(setTimeout(() => removeFileUpload(file.name), 500)))
-                );
+            return { file, controller };
         });
 
-        Promise.all(uploads.map((fn) => fn()))
-            .then(() => mutate())
-            .catch((error) => {
-                clearFileUploads();
-                clearAndAddHttpError(error);
-            });
+        runPool(jobs, MAX_PARALLEL_UPLOADS, async ({ file, controller }) => {
+            // Canceled while still waiting in the queue.
+            if (controller.signal.aborted) {
+                return;
+            }
+
+            try {
+                await uploadFile({
+                    uuid,
+                    directory: target,
+                    blob: file,
+                    signal: controller.signal,
+                    staged: canUpdate,
+                    canReplace: canDelete,
+                    onUpdate: (patch) => updateFileUpload({ name: file.name, patch }),
+                });
+
+                timeouts.value.push(setTimeout(() => removeFileUpload(file.name), 1500));
+                mutate();
+            } catch (error) {
+                // uploadFile already recorded the specific reason on the entry; canceled ones just vanish.
+                if (controller.signal.aborted) {
+                    removeFileUpload(file.name);
+                }
+            }
+        }).then(() => {
+            mutate();
+
+            const failed = jobs.filter(({ file, controller }) => !controller.signal.aborted && hasFailed(file.name));
+            if (failed.length > 0) {
+                addError(
+                    translateUiText('{{count}} file(s) failed to upload. Open the upload list for details.', {
+                        count: failed.length,
+                    }),
+                    translateUiText('Upload failed')
+                );
+            }
+        });
     };
 
     return (
