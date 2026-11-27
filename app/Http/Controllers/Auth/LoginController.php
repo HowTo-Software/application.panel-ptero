@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Pterodactyl\Models\User;
+use Pterodactyl\Services\Users\LocalAuthentication;
 use Illuminate\Http\JsonResponse;
 use Pterodactyl\Facades\Activity;
 use Illuminate\Contracts\View\View;
@@ -31,6 +32,9 @@ class LoginController extends AbstractLoginController
      */
     public function login(Request $request): JsonResponse
     {
+        abort_unless(LocalAuthentication::enabled(), 404);
+        $request->validate(['user' => 'required|string', 'password' => 'required|string']);
+
         if ($this->hasTooManyLoginAttempts($request)) {
             $this->fireLockoutEvent($request);
             $this->sendLockoutResponse($request);
@@ -49,7 +53,7 @@ class LoginController extends AbstractLoginController
         // continue. Previously this was handled in the 2FA checkpoint, however that has
         // a flaw in which you can discover if an account exists simply by seeing if you
         // can proceed to the next step in the login process.
-        if (!password_verify($request->input('password'), $user->password)) {
+        if (!LocalAuthentication::allows($user) || !password_verify($request->input('password'), $user->password)) {
             $this->sendFailedLoginResponse($request, $user);
         }
 
@@ -61,6 +65,7 @@ class LoginController extends AbstractLoginController
 
         $request->session()->put('auth_confirmation_token', [
             'user_id' => $user->id,
+            'method' => 'local',
             'token_value' => $token = Str::random(64),
             'expires_at' => CarbonImmutable::now()->addMinutes(5),
         ]);

@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Pterodactyl\Models\User;
+use Pterodactyl\Services\Users\LocalAuthentication;
 use Illuminate\Http\JsonResponse;
 use PragmaRX\Google2FA\Google2FA;
 use Illuminate\Support\Facades\Event;
@@ -60,6 +61,11 @@ class LoginCheckpointController extends AbstractLoginController
             $user = User::query()->findOrFail($details['user_id']);
         } catch (ModelNotFoundException) {
             $this->sendFailedLoginResponse($request, null, self::TOKEN_EXPIRED_MESSAGE);
+        }
+
+        if (($details['method'] ?? null) === 'local' && !LocalAuthentication::allows($user)) {
+            $request->session()->forget('auth_confirmation_token');
+            $this->sendFailedLoginResponse($request);
         }
 
         // Recovery tokens go through a slightly different pathway for usage.

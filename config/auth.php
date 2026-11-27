@@ -1,6 +1,9 @@
 <?php
 
 return [
+    // Alternative local password login and recovery for eligible accounts.
+    'local_login_enabled' => env('LOCAL_AUTH_ENABLED', true),
+
     /*
     |--------------------------------------------------------------------------
     | Lockout Configuration

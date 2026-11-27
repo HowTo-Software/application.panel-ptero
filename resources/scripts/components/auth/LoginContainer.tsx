@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthPageShell, FormSurface } from '@/components/auth/LoginFormContainer';
 import { useStoreState } from 'easy-peasy';
 import tw from 'twin.macro';
@@ -9,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 const LoginContainer = () => {
     const { clearFlashes, addFlash } = useFlash();
     const { t } = useTranslation('strings');
+    const localAuthEnabled = useStoreState((state) => state.settings.data?.localAuthEnabled ?? false);
     const ssoEnabled = useStoreState((state) => state.settings.data!.sso?.enabled ?? false);
     const recoveryUrl = useStoreState((state) => state.settings.data!.sso?.recoveryUrl ?? '');
     const ssoError = useStoreState((state) => state.settings.data!.sso?.error ?? '');
@@ -32,6 +34,18 @@ const LoginContainer = () => {
                             {t('auth.sso_login')}
                         </Button>
                     </a>
+                )}
+                {localAuthEnabled && (
+                    <div css={tw`mt-4`}>
+                        <Link to={'/auth/login/legacy'} css={tw`block text-center`}>
+                            <Button type={'button'} size={'xlarge'} css={tw`w-full`}>
+                                {t('auth.legacy_login')}
+                            </Button>
+                        </Link>
+                    </div>
+                )}
+                {!ssoEnabled && !localAuthEnabled && (
+                    <p css={tw`text-center text-neutral-500`}>{t('auth.login_unavailable')}</p>
                 )}
                 {recoveryUrl.length > 0 && (
                     <div css={tw`mt-6 text-center`}>

@@ -7,6 +7,7 @@ export interface SiteSettings {
         enabled: boolean;
         siteKey: string;
     };
+    localAuthEnabled?: boolean;
     sso: {
         enabled: boolean;
         recoveryUrl: string;

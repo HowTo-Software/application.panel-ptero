@@ -89,10 +89,14 @@
                     <h3 class="box-title">{{ __('Password') }}</h3>
                 </div>
                 <div class="box-body">
-                    <div class="alert alert-warning">
-                        <p>{{ __('Leave this blank. Passwords live in Active Directory and users sign in with Single Sign-On, so a password set here is') }} <strong>{{ __('not') }}</strong> {{ __('the one they log in with.') }}</p>
-                        <p class="no-margin">{{ __('It is a break-glass credential only: the sign-in screen has no password field, and it is accepted solely by a direct') }} <code>POST /auth/login</code> {{ __('if Authentik or Active Directory is unavailable. If you need one, generate it below and record it now — it is never shown again.') }}</p>
-                    </div>
+                    @if(\Pterodactyl\Services\Users\LocalAuthentication::enabled())
+                        <div class="alert alert-info">
+                            <p>{{ __('strings.auth.legacy_admin_create') }}</p>
+                            <p class="no-margin">{{ __('strings.auth.legacy_admin_restriction') }}</p>
+                        </div>
+                    @else
+                        <div class="alert alert-warning">{{ __('strings.auth.legacy_disabled') }}</div>
+                    @endif
                     <div id="gen_pass" class="alert alert-success" style="display:none;margin-bottom:10px;"></div>
                     <div class="form-group">
                         <label for="pass" class="control-label">{{ __('Password') }} <span class="field-optional"></span></label>
