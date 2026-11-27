@@ -125,6 +125,24 @@ const FileUploadList = () => {
                         </span>
                         {file.status !== 'error' && <span> · {statusLine(file)}</span>}
                     </div>
+                    {file.mode === 'chunked' && file.status !== 'error' && (
+                        <div className={'mt-1 ml-9 text-xs text-gray-400'}>
+                            {translateUiText('Chunked upload')}
+                            {file.connections
+                                ? ` · ${translateUiText('{{count}} parallel connections', { count: file.connections })}`
+                                : ''}
+                            {file.resumedFrom
+                                ? ` · ${translateUiText('Resumed: {{size}} were already on the server', {
+                                      size: formatBytes(file.resumedFrom),
+                                  })}`
+                                : ''}
+                        </div>
+                    )}
+                    {file.status === 'done' && file.sha256 && (
+                        <div className={'mt-1 ml-9 text-xs text-gray-400 truncate'} title={file.sha256}>
+                            {`SHA-256: ${file.sha256}`}
+                        </div>
+                    )}
                     {file.error && (
                         <p
                             className={`mt-1 ml-9 text-xs ${

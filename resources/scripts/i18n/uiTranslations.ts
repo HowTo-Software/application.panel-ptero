@@ -473,6 +473,26 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
             'Não foi possível conectar ao WebSocket após várias tentativas. Tente atualizar a página.',
         'File Uploads': 'Envios de arquivos',
         'Folder uploads are not supported.': 'O envio de pastas não é compatível.',
+        'The node is already receiving the maximum number of chunks; retrying shortly.':
+            'O node já está recebendo o número máximo de partes; tentando novamente em instantes.',
+        'A chunk arrived damaged (checksum mismatch) and is being sent again.':
+            'Uma parte chegou danificada (SHA-256 não confere) e está sendo reenviada.',
+        'A file with that name already exists and you are not allowed to replace it. The upload was kept: delete or rename the existing file, then select this file again to finish instantly.':
+            'Já existe um arquivo com esse nome e você não tem permissão para substituí-lo. O envio foi mantido: exclua ou renomeie o arquivo existente e selecione este arquivo novamente para concluir na hora.',
+        'The upload session on the node expired, was damaged or was incomplete; it is being resumed.':
+            'A sessão de envio no node expirou, foi danificada ou estava incompleta; ela está sendo retomada.',
+        'Chunked uploads are not enabled on this node.': 'Envios fragmentados não estão ativados neste node.',
+        'The upload authorization expired; a new one is being requested.':
+            'A autorização do envio expirou; uma nova está sendo solicitada.',
+        'This server already has the maximum number of unfinished uploads; finish or cancel one first.':
+            'Este servidor já tem o número máximo de envios inacabados; conclua ou cancele um antes.',
+        'The file is larger than the maximum upload size allowed by this node.':
+            'O arquivo é maior que o tamanho máximo de envio permitido por este node.',
+        'A file named "{{name}}" already exists and you do not have permission to replace it. Delete or rename it first.':
+            'Já existe um arquivo chamado "{{name}}" e você não tem permissão para substituí-lo. Exclua ou renomeie antes.',
+        'Chunked upload': 'Envio fragmentado',
+        '{{count}} parallel connections': '{{count}} conexões paralelas',
+        'Resumed: {{size}} were already on the server': 'Retomado: {{size}} já estavam no servidor',
         'A file named "{{name}}" already exists. To avoid overwriting it destructively, delete or rename it first (replacing needs both update and delete permissions).':
             'Já existe um arquivo chamado "{{name}}". Para não sobrescrevê-lo de forma destrutiva, exclua ou renomeie o arquivo antes (substituir exige as permissões de atualizar e de excluir).',
         'The existing file "{{name}}" could not be set aside, so it was left untouched. The new file was kept as "{{temp}}": {{detail}}':

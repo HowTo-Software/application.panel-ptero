@@ -95,6 +95,7 @@ Route::group([
         Route::middleware([ResourceLimit::FilePull->middleware()])
             ->post('/pull', [Client\Servers\FileController::class, 'pull']);
         Route::get('/upload', Client\Servers\FileUploadController::class);
+        Route::get('/upload-session', Client\Servers\FileUploadSessionController::class);
     });
 
     Route::group(['prefix' => '/schedules'], function () {

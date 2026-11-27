@@ -33,6 +33,14 @@ export interface UploadPatch {
     retryInMs?: number | null;
     error?: string | null;
     errorKind?: string | null;
+    /** How the file is being sent. */
+    mode?: 'legacy' | 'chunked';
+    /** Parallel connections currently in use (chunked uploads). */
+    connections?: number;
+    /** Bytes the node already had when a chunked upload was resumed. */
+    resumedFrom?: number;
+    /** SHA-256 of the whole file as computed by the node (chunked uploads). */
+    sha256?: string | null;
 }
 
 export interface RemoteEntry {
