@@ -17,6 +17,10 @@ export interface FileUploadData {
     /** Specific, user-facing explanation of the last failure. Kept while the file is retrying or failed. */
     error?: string | null;
     errorKind?: string | null;
+    mode?: 'legacy' | 'chunked';
+    connections?: number;
+    resumedFrom?: number;
+    sha256?: string | null;
 }
 
 export interface ServerFileStore {

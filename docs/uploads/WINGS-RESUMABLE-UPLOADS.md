@@ -1,52 +1,53 @@
-# Upload fragmentado e retomável no Wings — desenho e avaliação / Chunked, resumable uploads in Wings — design and assessment
+# Upload fragmentado e retomável no Wings / Chunked, resumable uploads in Wings
 
-> **Status: proposta. Nada disto foi implementado, compilado ou testado.** O Wings é um repositório separado (`pterodactyl/wings`);
-> a infraestrutura roda **v1.13.4** (confirmado no node1). Esta PR **não** altera o Wings e **não** simula fragmentação só no frontend.
+> **Status: implementado** no fork `HowTo-Software/application.wings-ptero` (base: tag **v1.13.4**, branch `howto/v1.13.4`)
+> e consumido pelo painel (este repositório). Este documento descreve o **protocolo como foi construído**, as garantias,
+> a compatibilidade e os limites. O relatório de benchmark e os procedimentos de instalação/reversão estão no PR e em
+> `docs/howto/RESUMABLE-UPLOADS.md` do fork. Português primeiro; resumo em inglês no fim.
 
-## 1. Por que o Wings precisa mudar
+## 1. Por que o Wings precisou mudar
 
-O endpoint atual (`POST /upload/file`, `router/router_server_files.go`) recebe **um** multipart e grava direto no nome final.
-Sem alteração no servidor é **impossível**: (a) retomar do offset onde caiu, (b) enviar partes em paralelo na mesma conexão lógica,
-(c) validar hash, (d) garantir que o nome final só exista com o arquivo completo. O frontend não consegue fingir nenhuma dessas coisas
-sem criar arquivos parciais visíveis ou concatenar no cliente (que não tem acesso ao disco do node).
+O `POST /upload/file` do Wings recebe **um** multipart e grava direto no nome final. Sem mudar o servidor é **impossível**
+retomar de um offset, enviar partes em paralelo, validar hash ou garantir que o nome final só exista com o arquivo completo.
+Por isso nada disso foi simulado só no frontend.
 
-## 2. Mudanças exatas propostas (Wings)
+## 2. Protocolo (todas as rotas autenticadas por JWT em `?token=`)
 
-Arquivos afetados em `pterodactyl/wings`:
-
-| Arquivo | Alteração |
+| Rota | Função |
 |---|---|
-| `router/tokens/upload.go` | Novo payload `UploadSessionPayload` (`server_uuid`, `user_uuid`, `session_id`, `total_size`, `directory`, `name`) com escopo novo `upload-session`. **Reutilizável** durante a sessão (ao contrário do `unique_id` único do upload atual), mas preso a `session_id`, servidor, diretório, nome e expiração. |
-| `router/router.go` | Registrar rotas (autenticadas só por JWT, como o upload atual): `POST /upload/session` (criar), `PATCH /upload/session/:id` (enviar parte), `HEAD /upload/session/:id` (consultar offset/lacunas), `POST /upload/session/:id/complete`, `DELETE /upload/session/:id` (abortar). `GET /upload/capabilities` para o painel detectar suporte. |
-| `router/router_server_files.go` (ou novo `router_upload_session.go`) | Handlers acima. |
-| `server/filesystem/` | Gravar em `.<nome>.<session>.part` **no mesmo diretório**, via `unixFS` (o mesmo `openat2`/raiz do servidor usado hoje → **sem escapar do volume**). Pré-alocar com `fallocate` do tamanho declarado, escrever cada parte com `WriteAt` (sem buffer: `io.Copy` do corpo para `io.NewOffsetWriter`), no `complete` validar tamanho (e SHA-256 se informado) e `rename` atômico para o nome final, depois `chown`. |
-| `config/config.go` | `api.upload_session.max_chunk_bytes` (ex.: 8–32 MiB), `max_parallel_chunks`, `session_ttl`, `max_sessions_per_server` (ex.: 4). |
-| Rotina de limpeza | Remover `.part` de sessões expiradas (ticker de `server`/cron já existente do Wings) e no boot. |
+| `POST /upload/session` | Cria a sessão **ou retorna a existente** (`resumed: true`) com os intervalos de partes já recebidos. |
+| `GET /upload/session/:id` | Estado da sessão (partes recebidas, bytes já "hasheados", resultado se concluída). |
+| `PUT /upload/session/:id/chunks/:n?sha256=<hex>` | Corpo = exatamente a parte *n* (16 MiB, exceto a última). O Wings grava em streaming no offset, calcula o SHA-256 e **recusa (422) se não bater**. Idempotente. |
+| `POST /upload/session/:id/complete` | Confere se tudo chegou, calcula/valida o SHA-256 do **arquivo inteiro**, e faz a troca **atômica** para o nome final. Idempotente. Corpo opcional `{"sha256": "..."}`. |
+| `DELETE /upload/session/:id` | Descarta a sessão e libera a cota. |
+| `GET /api/system?v=2` | Passa a incluir `capabilities.howto_upload_sessions` (`version`, `chunk_size`, `max_parallel_chunks`, `max_size`, `hash`, `http2`). O Wings original **não** envia essa chave. |
 
-### Garantias exigidas
+O token (`scope: upload-session`) é assinado pelo painel, **vale para várias requisições** (ao contrário do token único do
+upload legado) mas é preso a **uma** sessão, servidor, usuário, diretório, nome e tamanho, e expira em 15 min (o painel emite outro
+quando preciso). Sujeito à mesma revogação (denylist) dos demais tokens.
 
-* **Isolamento entre servidores/clientes:** a sessão guarda `server_uuid` assinado no JWT; todo acesso ao disco passa por `s.Filesystem()` do servidor correspondente (raiz própria). Nome validado como componente único (sem `/`, `..`), checado por `IsIgnored` como hoje.
-* **Sem aumento de RAM/CPU:** nenhum buffering do arquivo; memória por parte = buffer do `io.Copy` (32 KiB). CPU extra só se hash for pedido (SHA-256 incremental por parte; ≈ custo de leitura de disco). Limite de partes paralelas por sessão e de sessões por servidor.
-* **Cota de disco:** reservar o `total_size` declarado no `POST /upload/session` (`HasSpaceFor`, já existente) e liberar ao abortar/expirar; respeitar `api.upload_limit` do node (rejeitar com 400 no início, sem receber bytes).
-* **Nada incompleto vira "concluído":** o nome final só aparece no `rename` após validar tamanho/hash. Um arquivo existente **não** é truncado durante o envio (diferente de hoje).
-* **Idempotência/retomada:** `HEAD` devolve os intervalos já recebidos; o cliente reenvia só as lacunas. Partes repetidas são sobrescritas no mesmo offset (seguro).
-* **Compatibilidade:** `POST /upload/file` **permanece** igual (SFTP não é afetado; ele usa outro caminho). Painel novo consulta `GET /upload/capabilities`; se 404 (Wings antigo) → usa o fluxo atual desta PR. Wings novo continua aceitando painel antigo.
+**Sessão determinística (retomar após fechar o navegador).** O painel calcula `session_id = HMAC-SHA256(app.key, [usuário, servidor, diretório, nome, tamanho, mtime])[0:32]`.
+Selecionar o mesmo arquivo de novo gera o mesmo id, o Wings encontra a sessão e informa o que já tem. O painel não guarda nada em banco.
 
-## 3. Mudanças no painel (depois do Wings)
+## 3. Garantias
 
-* `JwtScope::FileUploadSession` + `FileUploadSessionController` (gera JWT de sessão; mesmo padrão de `FileUploadController`).
-* Cliente: partes de 8–16 MiB, **2–4 em paralelo** (a avaliar por medição), retentativa **por parte** com backoff, retomada via `HEAD`, hash SHA-256 por parte calculado em *streaming* (`Blob.slice` + `crypto.subtle.digest` por parte — viável, pois cada parte é pequena), progresso agregado.
+* **Nome final só com arquivo completo e verificado.** Os dados vão para `.upload-<id>.part` ao lado do destino; no fim, `renameat(2)` atômico (substitui um arquivo regular existente **mantendo as permissões dele**; nunca substitui pasta/symlink). Antes de concluir, o arquivo existente **não é tocado** (o upload legado o trunca no 1º byte).
+* **Isolamento.** Todo acesso a disco passa pelo `Filesystem` do próprio servidor (raiz própria, `openat2`); nomes e diretórios são validados (sem `/`, `..`, NUL; diretório normalizado dentro da raiz); sessões são ligadas a servidor **e** usuário (outro usuário recebe 404, sem saber que existe); o estado da sessão fica **fora do volume** (`<root>/upload-sessions/<servidor>/`, modo 0700/0600), onde processos do jogo não alcançam.
+* **Cota.** `HasSpaceFor(tamanho)` ao criar (recusa antes do 1º byte) e escrita contabilizada na cota **do servidor** a cada parte, com **um único handle por sessão** (partes paralelas não contam o mesmo trecho duas vezes). Limite `api.upload_limit` do node aplicado na criação. Abortar/expirar libera a cota.
+* **Sem RAM extra.** Streaming com buffer de 256 KiB por parte em andamento (máx. 8 por sessão, 4 sessões por servidor). Nada de arquivo ou parte inteira em memória.
+* **Integridade.** SHA-256 por parte (verificado no recebimento) + SHA-256 incremental do arquivo inteiro (prefixo contíguo; estado persistido, então sobrevive a reinício do Wings) + `fdatasync` por parte antes de confirmar.
+* **Limpeza automática.** Varredura a cada 5 min remove sessões ociosas (padrão 24 h) **e seus `.part`**, lápides de conclusão expiradas (1 h) e estado de servidores apagados.
+* **Compatibilidade.** `POST /upload/file`, SFTP e todos os demais endpoints **não mudam** (suíte upstream inteira passa no CI, incluindo `sftp`). Wings original + painel novo: o painel detecta a ausência da capacidade e usa o upload "regular" da PR #46. Wings novo + painel antigo: as rotas novas simplesmente não são usadas. Nodes dos dois tipos convivem no mesmo painel.
 
-## 4. Avaliação de compatibilidade e risco
+## 4. Limites conhecidos (honestos)
 
-| Item | Avaliação |
-|---|---|
-| Versão do Wings | Alvo: **v1.13.4** (a instalada). Requer **build próprio** do Wings (fork) ou PR upstream; o binário em `/usr/local/bin/wings` foi instalado em 15/10 e há `config.yml.bak-before-howtoo`, indicando que o node já é customizado — **verificar de onde vem o binário antes de planejar o fork**. |
-| Deploy | Substituir o binário e reiniciar o serviço: **derruba WebSocket/SFTP por alguns segundos**; containers de jogo seguem rodando. Fazer **primeiro em um node de homologação**; node1 hospeda servidores de produção. |
-| Risco | Médio: novo código de escrita em disco no caminho de dados. Mitigar com testes de integração (cota, nomes maliciosos, sessões concorrentes, queda no meio, reinício do Wings no meio). |
-| Ganho esperado | **Não medido.** Retomada: evita refazer GBs a cada queda (benefício certo para 10 GiB em link instável). Paralelismo: pode aumentar a vazão em links com perda/RTT alto (várias conexões TCP), mas **o ganho só pode ser afirmado após medir** com `scripts/upload-benchmark.mjs` em homologação. |
-| Alternativas sem fork | (a) SFTP (já suportado) para arquivos grandes: retomável por clientes como WinSCP/rsync-over-ssh; (b) `pull` de URL remota no Wings (já existe) a partir de um armazenamento com boa banda; (c) `tus`/rclone num sidecar — **fora do escopo de isolamento do Wings**, exigiria novo serviço no node. |
+* Janela residual de TOCTOU entre listar o diretório e concluir (outra pessoa criar o arquivo nesse intervalo): a troca atômica só substitui com permissão, mas o painel não bloqueia a criação concorrente.
+* O hash do arquivo inteiro é calculado e **devolvido** pelo Wings; o navegador **não** calcula o hash do arquivo inteiro (a Web Crypto não faz hash incremental). A integridade fim a fim é garantida por: hash de cada parte (calculado no navegador e conferido no node) + hash do arquivo inteiro calculado no node a partir do que está em disco.
+* `fdatasync` por parte custa I/O; em discos lentos pode limitar a vazão (medir).
+* Perda de energia entre a confirmação de uma parte e o `complete` não é coberta além do `fdatasync` por parte.
+* Navegadores: com **HTTP/2** todas as requisições paralelas usam **uma** conexão TCP; só HTTP/1.1 (Chrome: até 6 conexões por host) soma conexões — por isso existe `api.upload_sessions.disable_http2`. A decisão de ligá-lo **depende de medir o caminho real**.
+* Implantação exige **binário próprio do Wings** (o fork) e reinício do serviço (derruba WebSocket/SFTP por alguns segundos; containers de jogo continuam). Fazer primeiro em **homologação**.
 
 ## 5. English summary
 
-Resumable/parallel uploads need server support: today Wings accepts a single multipart POST written straight to the final path. Proposed: a session API (`POST/HEAD/PATCH/complete/DELETE /upload/session`, plus `GET /upload/capabilities`) with a session-scoped JWT, writes to `.name.session.part` through the server's own rooted filesystem (isolation preserved), `WriteAt` per chunk without buffering (no extra RAM), disk reservation up front, size/SHA-256 validation, atomic rename, TTL cleanup, and per-server limits. The legacy endpoint stays; the panel feature-detects and falls back. **Not implemented, not benchmarked.** Requires a custom Wings build and a staged rollout starting on a non-production node.
+Implemented in the fork `HowTo-Software/application.wings-ptero` (base tag v1.13.4). Session API: `POST /upload/session` (create-or-resume), `GET …/:id`, `PUT …/chunks/:n?sha256=` (streamed, verified, idempotent), `POST …/complete` (verifies, hashes the whole file, **atomic** replace keeping permissions), `DELETE`; capability advertised under `capabilities.howto_upload_sessions` in `/api/system?v=2` (absent in upstream Wings, which is how the panel falls back). Signed multi-use JWT bound to one session/server/user/path/name/size; deterministic HMAC session ids let the same file resume after closing the browser. State lives outside the server volume; all disk access goes through the server's own rooted filesystem; quota-accounted with one shared handle per session; no extra RAM; automatic cleanup. Legacy upload, SFTP and every other endpoint are untouched (upstream suite passes). Known limits: residual TOCTOU on replace, no whole-file hash computed in the browser, h2 multiplexing onto one TCP connection, custom Wings binary required.

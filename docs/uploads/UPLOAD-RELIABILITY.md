@@ -25,7 +25,7 @@ Navegador ──GET /api/client/servers/{uuid}/files/list──► Painel → Wi
 
 * O **corpo do arquivo não passa** pelo nginx/PHP do painel nem por proxies do painel. Limites `client_max_body_size`/`upload_max_filesize`/`post_max_size` **não se aplicam** ao upload (só à pequena chamada que gera a URL).
 * No node1 o Wings escuta **diretamente na 8443** (*medido*: `ss`, `systemctl is-active nginx cloudflared` = `inactive`).
-* Se o FQDN do node estiver **proxied pelo Cloudflare** (nuvem laranja), o Cloudflare limita o corpo a 100 MB (Free/Pro) / 200 MB (Business) / 500 MB (Enterprise) e responderia **413**, não 404. *Medido:* a resolução DNS que usei apontou para IP não-Cloudflare, mas **vimos uma conexão de IP Cloudflare na 8443**; confirme no painel do Cloudflare que o registro do node é **DNS only**.
+* Se o FQDN do node estiver **proxied pelo Cloudflare** (nuvem laranja), o Cloudflare limita o corpo a 100 MB (Free/Pro) / 200 MB (Business) / 500 MB (Enterprise) e responderia **413**, não 404. *Medido depois (ver `NETWORK-INVESTIGATION.md`):* o registro do node é **DNS only** e um `HEAD https://node1.howto.software:8443/` foi respondido **direto pelo Wings** (sem `cf-ray`/`server: cloudflare`), portanto **não há Cloudflare nem limite de 100 MB nesse caminho**.
 
 ## 3. O que foi medido no node1 (somente leitura)
 

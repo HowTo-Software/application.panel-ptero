@@ -14,6 +14,10 @@ export type UploadErrorKind =
     | 'integrity'
     | 'finalize'
     | 'exists'
+    | 'busy'
+    | 'checksum'
+    | 'session_lost'
+    | 'unsupported'
     | 'unknown';
 
 /** Where in the flow the failure happened: asking the panel for a signed URL, or sending bytes to Wings. */
@@ -63,6 +67,22 @@ const wingsMessage = (error: any): string => {
     }
 
     return typeof data === 'string' ? data.slice(0, 200) : '';
+};
+
+/** Wings' chunked-upload endpoints (and the panel) send a machine readable `code` next to the message. */
+const errorCode = (error: any): string => {
+    const data = error?.response?.data;
+
+    if (data && typeof data === 'object') {
+        if (typeof data.code === 'string') {
+            return data.code;
+        }
+        if (Array.isArray(data.errors) && typeof data.errors[0]?.code === 'string') {
+            return data.errors[0].code;
+        }
+    }
+
+    return '';
 };
 
 const STORAGE_PATTERN = /(disk (limit|space)|no space left|insufficient storage|quota|not enough (disk|space))/i;
@@ -115,6 +135,93 @@ export const classifyUploadError = (error: any, phase: UploadPhase = 'upload'): 
                 'The connection to the node was lost during the upload. Check your internet connection; the upload is retried automatically.'
             ),
         };
+    }
+
+    switch (errorCode(error)) {
+        case 'E_BUSY':
+            return {
+                kind: 'busy',
+                retryable: true,
+                status,
+                message: translateUiText(
+                    'The node is already receiving the maximum number of chunks; retrying shortly.'
+                ),
+            };
+        case 'E_CHECKSUM':
+            return {
+                kind: 'checksum',
+                retryable: true,
+                status,
+                message: translateUiText('A chunk arrived damaged (checksum mismatch) and is being sent again.'),
+            };
+        case 'E_EXISTS':
+            return {
+                kind: 'exists',
+                retryable: false,
+                status,
+                message: translateUiText(
+                    'A file with that name already exists and you are not allowed to replace it. The upload was kept: delete or rename the existing file, then select this file again to finish instantly.'
+                ),
+            };
+        case 'E_NOT_FOUND':
+        case 'E_CORRUPT':
+        case 'E_CONFLICT':
+        case 'E_INCOMPLETE':
+            return {
+                kind: 'session_lost',
+                retryable: true,
+                status,
+                message: translateUiText(
+                    'The upload session on the node expired, was damaged or was incomplete; it is being resumed.'
+                ),
+            };
+        case 'E_DISABLED':
+            return {
+                kind: 'unsupported',
+                retryable: false,
+                status,
+                message: translateUiText('Chunked uploads are not enabled on this node.'),
+            };
+        case 'E_TOKEN':
+            return {
+                kind: 'token_rejected',
+                retryable: true,
+                status,
+                message: translateUiText('The upload authorization expired; a new one is being requested.'),
+            };
+        case 'E_REVOKED':
+            return {
+                kind: 'forbidden',
+                retryable: false,
+                status,
+                message: translateUiText('You do not have permission to upload files to this server.'),
+            };
+        case 'E_TOO_MANY_SESSIONS':
+            return {
+                kind: 'bad_request',
+                retryable: false,
+                status,
+                message: translateUiText(
+                    'This server already has the maximum number of unfinished uploads; finish or cancel one first.'
+                ),
+            };
+        case 'FileTooLargeException': {
+            const max = Number(error?.response?.data?.errors?.[0]?.meta?.max_size);
+
+            return {
+                kind: 'too_large',
+                retryable: false,
+                status,
+                message: max
+                    ? translateUiText(
+                          'The file is larger than the maximum upload size allowed by this node ({{limit}} MB).',
+                          {
+                              limit: Math.floor(max / (1024 * 1024)),
+                          }
+                      )
+                    : translateUiText('The file is larger than the maximum upload size allowed by this node.'),
+            };
+        }
     }
 
     if (status === 413) {

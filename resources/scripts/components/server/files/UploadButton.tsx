@@ -13,7 +13,7 @@ import Portal from '@/components/elements/Portal';
 import { CloudUploadIcon } from '@heroicons/react/outline';
 import { useSignal } from '@preact/signals-react';
 import { usePermissions } from '@/plugins/usePermissions';
-import { uploadFile } from '@/components/server/files/upload/uploadEngine';
+import { uploadAuto } from '@/components/server/files/upload/chunked/uploadStrategy';
 import { MAX_PARALLEL_UPLOADS, runPool } from '@/components/server/files/upload/queue';
 
 function isFileOrDirectory(event: DragEvent): boolean {
@@ -91,7 +91,7 @@ export default ({ className }: WithClassname) => {
             }
 
             try {
-                await uploadFile({
+                await uploadAuto({
                     uuid,
                     directory: target,
                     blob: file,
