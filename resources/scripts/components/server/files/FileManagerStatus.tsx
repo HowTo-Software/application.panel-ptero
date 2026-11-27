@@ -108,9 +108,13 @@ const FileUploadList = () => {
                         </Tooltip>
                         <Code className={'flex-1 truncate'}>{name}</Code>
                         <button
+                            // Finishing swaps file names on the server and must not be interrupted halfway.
+                            disabled={file.status === 'finalizing'}
                             onClick={cancelFileUpload.bind(this, name)}
                             title={translateUiText(file.status === 'error' ? 'Dismiss' : 'Cancel')}
-                            className={'text-gray-500 hover:text-gray-200 transition-colors duration-75'}
+                            className={
+                                'text-gray-500 hover:text-gray-200 transition-colors duration-75 disabled:opacity-30'
+                            }
                         >
                             <XIcon className={'w-5 h-5'} />
                         </button>

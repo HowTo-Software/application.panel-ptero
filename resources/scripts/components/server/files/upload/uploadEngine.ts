@@ -111,6 +111,23 @@ const MAX_FILE_NAME_BYTES = 255;
 
 export const temporaryName = (name: string, id: string): string => `${name}.${id}.part`;
 
+export const backupFileName = (name: string, id: string): string => `${name}.${id}.bak`;
+
+const errorDetail = (error: unknown): string => (error as Error)?.message || 'unknown error';
+
+const existsError = (name: string, what: 'folder' | 'file'): UploadFlowError =>
+    new UploadFlowError({
+        kind: 'exists',
+        retryable: false,
+        message:
+            what === 'folder'
+                ? translateUiText('A folder named "{{name}}" already exists in this directory.', { name })
+                : translateUiText(
+                      'A file named "{{name}}" already exists. To avoid overwriting it destructively, delete or rename it first (replacing needs both update and delete permissions).',
+                      { name }
+                  ),
+    });
+
 const canceled = (): UploadFlowError =>
     new UploadFlowError({ kind: 'canceled', retryable: false, message: translateUiText('Upload canceled.') });
 
@@ -146,14 +163,15 @@ const verifyAndFinalize = async (
     const total = blob.size;
     const finalName = blob.name;
 
-    const unconfirmed = (detail?: string) =>
+    const unconfirmed = (detail?: string, backup?: string | null) =>
         new UploadFlowError({
             kind: 'finalize',
             retryable: false,
-            message: translateUiText(
-                'The file was sent, but the panel could not confirm it on the server{{detail}}. Refresh the file list to check it.',
-                { detail: detail ? ` (${detail})` : '' }
-            ),
+            message:
+                translateUiText(
+                    'The file was sent, but the panel could not confirm it on the server{{detail}}. Refresh the file list to check it.',
+                    { detail: detail ? ` (${detail})` : '' }
+                ) + (backup ? ' ' + translateUiText('The previous version was kept as "{{backup}}".', { backup }) : ''),
         });
 
     let entries: RemoteEntry[];
@@ -190,16 +208,16 @@ const verifyAndFinalize = async (
     setPhase('finalize');
     job.onUpdate({ status: 'finalizing' });
 
+    // From here on the original file may be moved, so these steps ignore the user's cancel: stopping in the
+    // middle could leave the original under its backup name. They are short panel calls, not data transfer.
+    const uninterruptible = new AbortController().signal;
+
     const existing = entries.find((e) => e.name === finalName);
+    let backupName: string | null = null;
+
     if (existing) {
         if (!existing.isFile) {
-            throw new UploadFlowError({
-                kind: 'finalize',
-                retryable: false,
-                message: translateUiText('A folder named "{{name}}" already exists in this directory.', {
-                    name: finalName,
-                }),
-            });
+            throw existsError(finalName, 'folder');
         }
         if (!job.canReplace) {
             throw new UploadFlowError({
@@ -212,33 +230,101 @@ const verifyAndFinalize = async (
             });
         }
 
-        await withRetries(() => deps.remove(uuid, directory, finalName), deps, signal);
+        // Never delete the original up front. Wings refuses to rename onto an existing name, so the original
+        // is first moved aside, the new file moved in, and only then is the old copy removed.
+        const backup = backupFileName(finalName, deps.randomId());
+        backupName = backup;
+        try {
+            await withRetries(() => deps.rename(uuid, directory, finalName, backup), deps, uninterruptible);
+        } catch (error) {
+            throw new UploadFlowError({
+                kind: 'finalize',
+                retryable: false,
+                message: translateUiText(
+                    'The existing file "{{name}}" could not be set aside, so it was left untouched. The new file was kept as "{{temp}}": {{detail}}',
+                    { name: finalName, temp: remoteName, detail: errorDetail(error) }
+                ),
+            });
+        }
     }
 
-    try {
-        await withRetries(() => deps.rename(uuid, directory, remoteName, finalName), deps, signal);
-    } catch (error) {
-        throw new UploadFlowError({
+    /** Puts the original back after a failed replacement. Returns false when even that could not be done. */
+    const restoreOriginal = async (): Promise<boolean> => {
+        if (!backupName) {
+            return true;
+        }
+        const backup = backupName;
+
+        try {
+            const now = await withRetries(() => deps.list(uuid, directory), deps, uninterruptible);
+            // Something already sits at the final name: do not touch it.
+            if (now.some((e) => e.name === finalName)) {
+                return false;
+            }
+            await withRetries(() => deps.rename(uuid, directory, backup, finalName), deps, uninterruptible);
+
+            return true;
+        } catch {
+            return false;
+        }
+    };
+
+    const replacementFailed = async (detail: string): Promise<UploadFlowError> => {
+        const restored = await restoreOriginal();
+
+        if (restored) {
+            return new UploadFlowError({
+                kind: 'finalize',
+                retryable: false,
+                message: backupName
+                    ? translateUiText(
+                          'The new file could not replace "{{name}}" and the original was restored. The new file was kept as "{{temp}}": {{detail}}',
+                          { name: finalName, temp: remoteName, detail }
+                      )
+                    : translateUiText(
+                          'The file was uploaded as "{{temp}}" but could not be renamed to "{{name}}": {{detail}}',
+                          { name: finalName, temp: remoteName, detail }
+                      ),
+            });
+        }
+
+        return new UploadFlowError({
             kind: 'finalize',
             retryable: false,
             message: translateUiText(
-                'The file was uploaded as "{{temp}}" but could not be renamed to "{{name}}": {{detail}}',
-                { temp: remoteName, name: finalName, detail: (error as Error)?.message || 'unknown error' }
+                'The new file could not replace "{{name}}" and the original could not be restored automatically. Original: "{{backup}}". New file: "{{temp}}". Nothing was deleted: {{detail}}',
+                { name: finalName, backup: backupName ?? '', temp: remoteName, detail }
             ),
         });
+    };
+
+    try {
+        await withRetries(() => deps.rename(uuid, directory, remoteName, finalName), deps, uninterruptible);
+    } catch (error) {
+        throw await replacementFailed(errorDetail(error));
     }
 
     // Wings answers a rename of a missing source with success, so confirm the end result explicitly.
     let after: RemoteEntry[];
     try {
-        after = await withRetries(() => deps.list(uuid, directory), deps, signal);
+        after = await withRetries(() => deps.list(uuid, directory), deps, uninterruptible);
     } catch (error) {
-        throw unconfirmed((error as Error)?.message);
+        // Cannot tell what happened; leave everything exactly as it is rather than guess.
+        throw unconfirmed(errorDetail(error), backupName);
     }
 
     const final = after.find((e) => e.name === finalName);
-    if (!final || final.size !== total) {
-        throw unconfirmed();
+    if (!final) {
+        throw await replacementFailed(translateUiText('the new file was not found after the rename'));
+    }
+    if (final.size !== total) {
+        throw unconfirmed(undefined, backupName);
+    }
+
+    // The new file is confirmed in place; only now is the previous version removed. A failure here is
+    // harmless (a stray backup), so it never turns a successful upload into an error.
+    if (backupName) {
+        await deps.remove(uuid, directory, backupName).catch(() => undefined);
     }
 };
 
@@ -267,6 +353,31 @@ export const uploadFile = async (
     const total = blob.size;
     const finalName = blob.name;
     const staged = job.staged && utf8Length(temporaryName(finalName, 'xxxxxxxx')) <= MAX_FILE_NAME_BYTES;
+
+    // Refuse BEFORE sending a single byte whenever the upload could destroy an existing file: Wings truncates
+    // the target as soon as it receives the first byte of a direct upload. A staged upload may replace an
+    // existing file only when the user can also delete (replacement moves the original aside, see above).
+    try {
+        const entries = await deps.list(uuid, directory);
+        const existing = entries.find((e) => e.name === finalName);
+        if (existing) {
+            const blocked = !existing.isFile
+                ? existsError(finalName, 'folder')
+                : !staged || !job.canReplace
+                ? existsError(finalName, 'file')
+                : null;
+
+            if (blocked) {
+                job.onUpdate({ status: 'error', error: blocked.info.message, errorKind: blocked.info.kind });
+                throw blocked;
+            }
+        }
+    } catch (error) {
+        if (error instanceof UploadFlowError) {
+            throw error;
+        }
+        // The listing failed (network blip): do not block the upload; the checks after sending still apply.
+    }
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         if (job.signal.aborted) {

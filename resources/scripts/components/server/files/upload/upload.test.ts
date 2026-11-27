@@ -241,6 +241,9 @@ const harness = (size: number, finalName = 'CBRP.rar'): Harness => {
         list: async () => Array.from(fs.values()),
         rename: async (_u, _d, from, to) => {
             calls.rename.push([from, to]);
+            if (fs.has(to)) {
+                throw wingsError(400, 'Cannot move or rename file, destination already exists.');
+            }
             const entry = fs.get(from);
             if (entry) {
                 fs.delete(from);
@@ -348,29 +351,208 @@ describe('uploadFile', () => {
         expect(h.calls.rename).toHaveLength(0);
     });
 
-    it('replaces an existing file only after the new one is complete', async () => {
-        const h = harness(SIZE);
-        h.fs.set('CBRP.rar', { name: 'CBRP.rar', size: 5, isFile: true });
+    describe('replacing an existing file', () => {
+        const withOriginal = (h: Harness) => h.fs.set('CBRP.rar', { name: 'CBRP.rar', size: 5, isFile: true });
 
-        await uploadFile(h.job(), h.deps);
+        it('moves the original aside, moves the new file in, and only then removes the old copy', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const order: string[] = [];
+            const { rename, remove } = h.deps;
+            h.deps.rename = async (u, d, from, to) => {
+                order.push(`rename ${from} -> ${to}`);
+                return rename(u, d, from, to);
+            };
+            h.deps.remove = async (u, d, name) => {
+                order.push(`remove ${name}`);
+                return remove(u, d, name);
+            };
 
-        // The old copy was still there while the new one uploaded: remove happens after the send.
-        expect(h.calls.send).toHaveLength(1);
-        expect(h.calls.remove).toEqual(['CBRP.rar']);
-        expect(h.fs.get('CBRP.rar')?.size).toBe(SIZE);
-    });
+            await uploadFile(h.job(), h.deps);
 
-    it('keeps the new file under its temporary name when it may not replace the old one', async () => {
-        const h = harness(SIZE);
-        h.fs.set('CBRP.rar', { name: 'CBRP.rar', size: 5, isFile: true });
-
-        await expect(uploadFile(h.job({ canReplace: false }), h.deps)).rejects.toMatchObject({
-            info: { kind: 'finalize' },
+            expect(order).toEqual([
+                'rename CBRP.rar -> CBRP.rar.id2.bak', // original set aside, NOT deleted
+                'rename CBRP.rar.id1.part -> CBRP.rar',
+                'remove CBRP.rar.id2.bak', // only after the new file is confirmed
+            ]);
+            expect(h.fs.get('CBRP.rar')?.size).toBe(SIZE);
+            expect(h.fs.size).toBe(1);
         });
 
-        expect(h.fs.get('CBRP.rar')?.size).toBe(5); // untouched
-        expect(h.fs.has(temporaryName('CBRP.rar', 'id1'))).toBe(true); // not lost
-        expect(h.calls.remove).toEqual([]);
+        it('restores the original when moving the new file in fails, and deletes nothing', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const realRename = h.deps.rename;
+            h.deps.rename = async (u, d, from, to) => {
+                if (from.endsWith('.part')) {
+                    throw new Error('disk error');
+                }
+                return realRename(u, d, from, to);
+            };
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'finalize' } });
+
+            expect(h.fs.get('CBRP.rar')?.size).toBe(5); // original is back, intact
+            expect(h.fs.has('CBRP.rar.id1.part')).toBe(true); // the new data is not lost either
+            expect(h.calls.remove).toEqual([]);
+            expect(h.patches[h.patches.length - 1].error).toContain('original was restored');
+        });
+
+        it('restores the original when the rename silently moved nothing', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const realRename = h.deps.rename;
+            h.deps.rename = async (u, d, from, to) => {
+                if (from.endsWith('.part')) {
+                    h.calls.rename.push([from, to]);
+                    return; // Wings reports success for a missing source
+                }
+                return realRename(u, d, from, to);
+            };
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'finalize' } });
+
+            expect(h.fs.get('CBRP.rar')?.size).toBe(5);
+            expect(h.calls.remove).toEqual([]);
+            expect(h.patches.some((p) => p.status === 'done')).toBe(false);
+        });
+
+        it('names the backup and deletes nothing when the original cannot be restored either', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const realRename = h.deps.rename;
+            h.deps.rename = async (u, d, from, to) => {
+                if (from.endsWith('.part') || from.endsWith('.bak')) {
+                    throw new Error('node unreachable');
+                }
+                return realRename(u, d, from, to);
+            };
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'finalize' } });
+
+            const message = h.patches[h.patches.length - 1].error ?? '';
+            expect(message).toContain('CBRP.rar.id2.bak');
+            expect(message).toContain('CBRP.rar.id1.part');
+            expect(message).toContain('Nothing was deleted');
+            expect(h.fs.has('CBRP.rar.id2.bak')).toBe(true);
+            expect(h.fs.has('CBRP.rar.id1.part')).toBe(true);
+            expect(h.calls.remove).toEqual([]);
+        });
+
+        it('leaves the original untouched when it cannot be set aside', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const realRename = h.deps.rename;
+            h.deps.rename = async (u, d, from, to) => {
+                if (from === 'CBRP.rar') {
+                    throw new Error('permission denied');
+                }
+                return realRename(u, d, from, to);
+            };
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'finalize' } });
+
+            expect(h.fs.get('CBRP.rar')?.size).toBe(5);
+            expect(h.fs.has('CBRP.rar.id1.part')).toBe(true);
+            expect(h.calls.remove).toEqual([]);
+        });
+
+        it('still succeeds when the stray backup cannot be removed afterwards', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            h.deps.remove = async () => {
+                throw new Error('forbidden');
+            };
+
+            await uploadFile(h.job(), h.deps);
+
+            expect(h.fs.get('CBRP.rar')?.size).toBe(SIZE);
+            expect(lastStatus(h.patches)).toBe('done');
+        });
+
+        it('does not let a cancel interrupt the swap halfway', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+            const controller = new AbortController();
+            const realRename = h.deps.rename;
+            h.deps.rename = async (u, d, from, to) => {
+                if (from === 'CBRP.rar') {
+                    controller.abort(); // user clicks cancel right after the original was moved aside
+                }
+                return realRename(u, d, from, to);
+            };
+
+            await uploadFile(h.job({ signal: controller.signal }), h.deps);
+
+            expect(h.fs.get('CBRP.rar')?.size).toBe(SIZE);
+            expect(lastStatus(h.patches)).toBe('done');
+        });
+    });
+
+    describe('never overwrites destructively', () => {
+        const withOriginal = (h: Harness) => h.fs.set('CBRP.rar', { name: 'CBRP.rar', size: 5, isFile: true });
+
+        it('refuses BEFORE sending bytes when the user may not replace the existing file', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+
+            await expect(uploadFile(h.job({ canReplace: false }), h.deps)).rejects.toMatchObject({
+                info: { kind: 'exists' },
+            });
+
+            expect(h.calls.urls).toBe(0);
+            expect(h.calls.send).toEqual([]);
+            expect(h.fs.get('CBRP.rar')?.size).toBe(5);
+            expect(lastStatus(h.patches)).toBe('error');
+        });
+
+        it('refuses a direct (no file.update) upload over an existing file, because Wings would truncate it', async () => {
+            const h = harness(SIZE);
+            withOriginal(h);
+
+            await expect(uploadFile(h.job({ staged: false, canReplace: true }), h.deps)).rejects.toMatchObject({
+                info: { kind: 'exists' },
+            });
+
+            expect(h.calls.send).toEqual([]);
+            expect(h.fs.get('CBRP.rar')?.size).toBe(5);
+        });
+
+        it('refuses when a long name forces a direct upload over an existing file', async () => {
+            const longName = 'a'.repeat(250) + '.rar';
+            const h = harness(SIZE, longName);
+            h.fs.set(longName, { name: longName, size: 5, isFile: true });
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'exists' } });
+
+            expect(h.calls.send).toEqual([]);
+            expect(h.fs.get(longName)?.size).toBe(5);
+        });
+
+        it('refuses when a folder has that name', async () => {
+            const h = harness(SIZE);
+            h.fs.set('CBRP.rar', { name: 'CBRP.rar', size: 4096, isFile: false });
+
+            await expect(uploadFile(h.job(), h.deps)).rejects.toMatchObject({ info: { kind: 'exists' } });
+            expect(h.calls.send).toEqual([]);
+        });
+
+        it('does not block the upload when the pre-check listing itself fails', async () => {
+            const h = harness(SIZE);
+            const realList = h.deps.list;
+            let first = true;
+            h.deps.list = async (u, d) => {
+                if (first) {
+                    first = false;
+                    throw new Error('blip');
+                }
+                return realList(u, d);
+            };
+
+            await uploadFile(h.job(), h.deps);
+
+            expect(lastStatus(h.patches)).toBe('done');
+        });
     });
 
     it('detects a rename that silently did nothing (Wings ignores a missing source)', async () => {
@@ -440,7 +622,10 @@ describe('uploadFile', () => {
             };
 
             const promise = uploadFile(h.job(), h.deps, { stallTimeoutMs: 10_000 });
-            await Promise.resolve();
+            // Let the pre-check listing and the token request resolve so the watchdog is running.
+            for (let i = 0; i < 20; i++) {
+                await Promise.resolve();
+            }
             jest.advanceTimersByTime(20_000);
             await promise;
 

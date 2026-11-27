@@ -13,6 +13,7 @@ export type UploadErrorKind =
     | 'bad_request'
     | 'integrity'
     | 'finalize'
+    | 'exists'
     | 'unknown';
 
 /** Where in the flow the failure happened: asking the panel for a signed URL, or sending bytes to Wings. */

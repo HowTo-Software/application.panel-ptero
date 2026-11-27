@@ -473,6 +473,16 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
             'Não foi possível conectar ao WebSocket após várias tentativas. Tente atualizar a página.',
         'File Uploads': 'Envios de arquivos',
         'Folder uploads are not supported.': 'O envio de pastas não é compatível.',
+        'A file named "{{name}}" already exists. To avoid overwriting it destructively, delete or rename it first (replacing needs both update and delete permissions).':
+            'Já existe um arquivo chamado "{{name}}". Para não sobrescrevê-lo de forma destrutiva, exclua ou renomeie o arquivo antes (substituir exige as permissões de atualizar e de excluir).',
+        'The existing file "{{name}}" could not be set aside, so it was left untouched. The new file was kept as "{{temp}}": {{detail}}':
+            'Não foi possível mover o arquivo existente "{{name}}" de lado; ele foi mantido intacto. O novo arquivo ficou como "{{temp}}": {{detail}}',
+        'The new file could not replace "{{name}}" and the original was restored. The new file was kept as "{{temp}}": {{detail}}':
+            'O novo arquivo não conseguiu substituir "{{name}}" e o original foi restaurado. O novo arquivo ficou como "{{temp}}": {{detail}}',
+        'The new file could not replace "{{name}}" and the original could not be restored automatically. Original: "{{backup}}". New file: "{{temp}}". Nothing was deleted: {{detail}}':
+            'O novo arquivo não conseguiu substituir "{{name}}" e o original não pôde ser restaurado automaticamente. Original: "{{backup}}". Novo arquivo: "{{temp}}". Nada foi excluído: {{detail}}',
+        'The previous version was kept as "{{backup}}".': 'A versão anterior foi mantida como "{{backup}}".',
+        'the new file was not found after the rename': 'o novo arquivo não foi encontrado após a renomeação',
         'Upload canceled.': 'Envio cancelado.',
         'The upload stopped receiving data for {{seconds}} seconds, so it was restarted automatically.':
             'O envio ficou {{seconds}} segundos sem receber dados e foi reiniciado automaticamente.',
