@@ -1,10 +1,22 @@
 import { action, Action } from 'easy-peasy';
 import { cleanDirectoryPath } from '@/helpers';
+import type { UploadPatch, UploadStatus } from '@/components/server/files/upload/uploadEngine';
 
 export interface FileUploadData {
     loaded: number;
     readonly abort: AbortController;
     readonly total: number;
+    status?: UploadStatus;
+    /** Current transfer rate in bytes per second. */
+    speed?: number;
+    /** Estimated seconds remaining, null while unknown. */
+    eta?: number | null;
+    attempt?: number;
+    maxAttempts?: number;
+    retryInMs?: number | null;
+    /** Specific, user-facing explanation of the last failure. Kept while the file is retrying or failed. */
+    error?: string | null;
+    errorKind?: string | null;
 }
 
 export interface ServerFileStore {
@@ -19,6 +31,7 @@ export interface ServerFileStore {
 
     pushFileUpload: Action<ServerFileStore, { name: string; data: FileUploadData }>;
     setUploadProgress: Action<ServerFileStore, { name: string; loaded: number }>;
+    updateFileUpload: Action<ServerFileStore, { name: string; patch: UploadPatch }>;
     clearFileUploads: Action<ServerFileStore>;
     removeFileUpload: Action<ServerFileStore, string>;
     cancelFileUpload: Action<ServerFileStore, string>;
@@ -58,6 +71,13 @@ const files: ServerFileStore = {
     setUploadProgress: action((state, { name, loaded }) => {
         if (state.uploads[name]) {
             state.uploads[name].loaded = loaded;
+        }
+    }),
+
+    updateFileUpload: action((state, { name, patch }) => {
+        // The entry disappears when the user cancels; late updates from the engine are then ignored.
+        if (state.uploads[name]) {
+            Object.assign(state.uploads[name], patch);
         }
     }),
 

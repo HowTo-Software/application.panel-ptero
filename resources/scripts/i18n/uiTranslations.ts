@@ -473,6 +473,61 @@ const translations: Record<SupportedLocale, Record<string, string>> = {
             'Não foi possível conectar ao WebSocket após várias tentativas. Tente atualizar a página.',
         'File Uploads': 'Envios de arquivos',
         'Folder uploads are not supported.': 'O envio de pastas não é compatível.',
+        'A file named "{{name}}" already exists. To avoid overwriting it destructively, delete or rename it first (replacing needs both update and delete permissions).':
+            'Já existe um arquivo chamado "{{name}}". Para não sobrescrevê-lo de forma destrutiva, exclua ou renomeie o arquivo antes (substituir exige as permissões de atualizar e de excluir).',
+        'The existing file "{{name}}" could not be set aside, so it was left untouched. The new file was kept as "{{temp}}": {{detail}}':
+            'Não foi possível mover o arquivo existente "{{name}}" de lado; ele foi mantido intacto. O novo arquivo ficou como "{{temp}}": {{detail}}',
+        'The new file could not replace "{{name}}" and the original was restored. The new file was kept as "{{temp}}": {{detail}}':
+            'O novo arquivo não conseguiu substituir "{{name}}" e o original foi restaurado. O novo arquivo ficou como "{{temp}}": {{detail}}',
+        'The new file could not replace "{{name}}" and the original could not be restored automatically. Original: "{{backup}}". New file: "{{temp}}". Nothing was deleted: {{detail}}':
+            'O novo arquivo não conseguiu substituir "{{name}}" e o original não pôde ser restaurado automaticamente. Original: "{{backup}}". Novo arquivo: "{{temp}}". Nada foi excluído: {{detail}}',
+        'The previous version was kept as "{{backup}}".': 'A versão anterior foi mantida como "{{backup}}".',
+        'the new file was not found after the rename': 'o novo arquivo não foi encontrado após a renomeação',
+        'Upload canceled.': 'Envio cancelado.',
+        'The upload stopped receiving data for {{seconds}} seconds, so it was restarted automatically.':
+            'O envio ficou {{seconds}} segundos sem receber dados e foi reiniciado automaticamente.',
+        'The connection to the node timed out during the upload.': 'A conexão com o node expirou durante o envio.',
+        'The connection to the node was lost during the upload. Check your internet connection; the upload is retried automatically.':
+            'A conexão com o node foi perdida durante o envio. Verifique sua internet; o envio é repetido automaticamente.',
+        'A proxy or firewall between you and the node rejected the file for being too large (HTTP 413).':
+            'Um proxy ou firewall entre você e o node recusou o arquivo por ser grande demais (HTTP 413).',
+        'There is not enough storage space on this server to finish the upload.':
+            'Não há espaço de armazenamento suficiente neste servidor para concluir o envio.',
+        'The file is larger than the maximum upload size allowed by this node ({{limit}} MB).':
+            'O arquivo é maior que o tamanho máximo de envio permitido por este node ({{limit}} MB).',
+        'You do not have permission to upload files to this server.':
+            'Você não tem permissão para enviar arquivos para este servidor.',
+        'The node rejected the upload authorization (expired, already used or revoked). A new authorization is requested automatically.':
+            'O node recusou a autorização do envio (expirada, já utilizada ou revogada). Uma nova autorização é solicitada automaticamente.',
+        'The node returned an error (HTTP {{status}}) while receiving the file.':
+            'O node retornou um erro (HTTP {{status}}) ao receber o arquivo.',
+        'The node could not process the upload: {{detail}}': 'O node não conseguiu processar o envio: {{detail}}',
+        'Unexpected upload error: {{detail}}': 'Erro inesperado no envio: {{detail}}',
+        'The file was sent, but the panel could not confirm it on the server{{detail}}. Refresh the file list to check it.':
+            'O arquivo foi enviado, mas o painel não conseguiu confirmá-lo no servidor{{detail}}. Atualize a lista de arquivos para conferir.',
+        'The file was not found on the server after the upload finished.':
+            'O arquivo não foi encontrado no servidor após o fim do envio.',
+        'The file on the server is {{remote}} but the original is {{local}}. The upload was not marked as complete.':
+            'O arquivo no servidor tem {{remote}}, mas o original tem {{local}}. O envio não foi marcado como concluído.',
+        'A folder named "{{name}}" already exists in this directory.':
+            'Já existe uma pasta chamada "{{name}}" neste diretório.',
+        'A file named "{{name}}" already exists and you do not have permission to replace it. The new file was kept as "{{temp}}".':
+            'Já existe um arquivo chamado "{{name}}" e você não tem permissão para substituí-lo. O novo arquivo foi mantido como "{{temp}}".',
+        'The file was uploaded as "{{temp}}" but could not be renamed to "{{name}}": {{detail}}':
+            'O arquivo foi enviado como "{{temp}}", mas não foi possível renomeá-lo para "{{name}}": {{detail}}',
+        Queued: 'Na fila',
+        'Retrying in {{seconds}}s (attempt {{attempt}} of {{max}})':
+            'Nova tentativa em {{seconds}}s (tentativa {{attempt}} de {{max}})',
+        'Verifying file…': 'Verificando arquivo…',
+        'Finishing…': 'Finalizando…',
+        Completed: 'Concluído',
+        '{{time}} remaining': '{{time}} restantes',
+        'Attempt {{attempt}} of {{max}}': 'Tentativa {{attempt}} de {{max}}',
+        Total: 'Total',
+        Dismiss: 'Dispensar',
+        'Upload failed': 'Falha no envio',
+        '{{count}} file(s) failed to upload. Open the upload list for details.':
+            '{{count}} arquivo(s) não foram enviados. Abra a lista de envios para ver os detalhes.',
         'minecraft 1.17 requires running the server with java 16 or above':
             'O Minecraft 1.17 exige que o servidor use Java 16 ou superior.',
         'minecraft 1.18 requires running the server with java 17 or above':
